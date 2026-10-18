@@ -105,8 +105,15 @@ maintainer (never an agent) must:
 1. create `botnote-server` on npm with a first publish of the release tag;
 2. on npmjs.com → `botnote-server` → Settings → Trusted publishing, add GitHub
    Actions with repository `botnote-dev/botnote` and workflow `publish-npm.yml`,
-   the same settings `botnote` uses;
-3. re-run the tag's Publish npm workflow if it failed on `botnote-server`.
+   the same settings `botnote` uses, and tick **Direct npm publish** under
+   Allowed actions;
+3. re-run the tag's Publish npm workflow if it failed on `botnote-server`;
+4. `npm logout`, so the machine holds no publish credential again.
+
+Trusted publishers created since September 2026 allow only `npm stage publish`
+by default. Without Direct npm publish the OIDC token exchange succeeds and
+provenance is signed, but the upload fails with
+`403 Forbidden - PUT ... OIDC permission denied for this action`.
 
 After that every release publishes both packages from CI with no token.
 
