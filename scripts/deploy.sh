@@ -11,6 +11,7 @@
 #     (migrations are expand-only, so a rollback does not need to undo them,
 #     but the dump is the last line of defence)
 #   - the daemon must answer /health with the deployed version before we exit 0
+#   - a global `botnote` CLI linked into this checkout follows the deployed tag
 #
 # Environment overrides (defaults match docs/deployment.md):
 #   BOTNOTE_PROD_DIR   checkout launchd runs from     (/Users/jianhua/botnote)
@@ -88,6 +89,22 @@ wait_healthy() {
   die "daemon did not report version $want within 40s (got '${got:-unreachable}'). Check ~/Library/Logs/botnote-daemon.err.log"
 }
 
+link_cli() {
+  # `npm link` left $(npm root -g)/botnote pointing at this checkout. From v0.2.17
+  # the CLI is packages/cli; older tags (rollbacks) still ship it at the root.
+  local global_root link current prod want
+  global_root="$(npm root -g 2>/dev/null)" || return 0
+  link="$global_root/botnote"
+  [ -L "$link" ] || return 0
+  current="$(cd "$global_root" && cd "$(readlink "$link")" 2>/dev/null && pwd -P)" || return 0
+  prod="$(cd "$PROD_DIR" && pwd -P)"
+  [ "$current" = "$prod" ] || [ "$current" = "$prod/packages/cli" ] || return 0
+  if [ -f "$prod/packages/cli/package.json" ]; then want="$prod/packages/cli"; else want="$prod"; fi
+  [ "$current" = "$want" ] && return 0
+  ln -sfn "$want" "$link"
+  log "global botnote CLI now links to $want"
+}
+
 deploy_tag() {
   local tag="$1"
   [ -d "$PROD_DIR/.git" ] || die "$PROD_DIR is not a git checkout"
@@ -129,6 +146,7 @@ deploy_tag() {
 
   log "building"
   pnpm build
+  link_cli
 
   log "restarting $LAUNCHD_LABEL"
   launchctl kickstart -k "gui/$(id -u)/$LAUNCHD_LABEL"

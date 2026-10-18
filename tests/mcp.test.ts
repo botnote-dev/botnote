@@ -6,7 +6,7 @@ import http from "node:http";
 import type { AddressInfo } from "node:net";
 import path from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { BotnoteHttpClient } from "../src/mcp/http-client.js";
+import { BotnoteHttpClient } from "../packages/cli/src/mcp/http-client.js";
 import { buildServer } from "../src/rest/server.js";
 import { EmbeddingService } from "../src/service/embedding.js";
 import { createTestDb } from "./test_db.js";
@@ -38,7 +38,7 @@ beforeAll(async () => {
 
   transport = new StdioClientTransport({
     command: "node",
-    args: ["--import", "tsx", path.join(ROOT, "src/cli.ts"), "mcp"],
+    args: ["--import", "tsx", path.join(ROOT, "packages/cli/src/bin.ts"), "mcp"],
     env: { ...process.env, BOTNOTE_URL: baseUrl, NODE_OPTIONS: "--no-warnings" }
   });
   client = new Client({ name: "botnote-test", version: "0.0.1" });

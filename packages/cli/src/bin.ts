@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { execFileSync } from "node:child_process";
+import { spawnSync } from "node:child_process";
 import {
   createReadStream,
   createWriteStream,
@@ -113,7 +113,7 @@ Usage:
   botnote logout                           Wipe the saved token
   botnote whoami                           Show config status
 
-  botnote serve                            Run the REST + web daemon (same as: node dist/cli.js)
+  botnote serve                            Run the daemon (botnote-server on PATH, else npx botnote-server)
   botnote mcp                              Run the MCP stdio server (for plugin/agent integration)
 
   botnote projects [--all]                 List projects
@@ -698,14 +698,20 @@ async function cmdImport(args: Args): Promise<void> {
 }
 
 function cmdServe(): void {
-  // Re-exec into the existing daemon entry. dist/cli.js is sibling of dist/bin.js.
-  const cli = path.resolve(path.dirname(new URL(import.meta.url).pathname), "cli.js");
-  execFileSync(process.execPath, [cli], { stdio: "inherit" });
+  // The daemon is its own package (botnote-server, AGPL-3.0); this CLI only
+  // launches it so it can stay MIT and dependency-light.
+  const run = (cmd: string, argv: string[]) => spawnSync(cmd, argv, { stdio: "inherit" });
+  let result = run("botnote-server", []);
+  if ((result.error as NodeJS.ErrnoException | undefined)?.code === "ENOENT") {
+    result = run("npx", ["-y", `botnote-server@${VERSION}`]);
+  }
+  if (result.error) throw result.error;
+  process.exitCode = result.status ?? 1;
 }
 
-function cmdMcp(): void {
-  const cli = path.resolve(path.dirname(new URL(import.meta.url).pathname), "cli.js");
-  execFileSync(process.execPath, [cli, "mcp"], { stdio: "inherit" });
+async function cmdMcp(): Promise<void> {
+  const { runMcpStdio } = await import("./mcp/stdio.js");
+  await runMcpStdio();
 }
 
 async function main(): Promise<void> {

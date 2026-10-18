@@ -1,0 +1,50 @@
+{
+  "name": "botnote",
+  "version": "0.2.16",
+  "description": "botnote CLI and MCP server. Talk to a botnote daemon from the terminal or from any MCP client.",
+  "type": "module",
+  "license": "MIT",
+  "homepage": "https://botnote.net",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/botnote-dev/botnote",
+    "directory": "packages/cli"
+  },
+  "bugs": {
+    "url": "https://github.com/botnote-dev/botnote/issues"
+  },
+  "keywords": [
+    "agents",
+    "cli",
+    "mcp",
+    "memory",
+    "notes",
+    "tasks"
+  ],
+  "bin": {
+    "botnote": "dist/bin.js"
+  },
+  "files": [
+    "dist/",
+    "README.md"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "build": "node -e \"require('node:fs').rmSync('dist',{recursive:true,force:true})\" && tsc -p tsconfig.json && chmod +x dist/bin.js",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "prepack": "pnpm build"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.0.0",
+    "zod": "^3.23.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "typescript": "^5.6.0"
+  }
+}

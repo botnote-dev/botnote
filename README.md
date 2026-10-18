@@ -26,6 +26,19 @@ Three things only:
 
 Requires: Node 20+, pnpm, Docker.
 
+### Packages
+
+This repository ships two npm packages:
+
+| Package | Contents | License |
+|---------|----------|---------|
+| [`botnote`](packages/cli) | CLI and MCP stdio server; talks to a daemon over HTTP | MIT |
+| `botnote-server` | The daemon: REST API, web UI, Postgres storage, background jobs | AGPL-3.0-only |
+
+Client machines only need `botnote`. The machine that hosts your data runs
+`botnote-server` (`npx botnote-server`, or `botnote serve` once the CLI is
+installed) with `DATABASE_URL` pointing at Postgres with pgvector.
+
 ### CLI install
 
 On client machines, install the portable CLI from npm:
@@ -70,8 +83,8 @@ right. If the proxy runs on another machine, list its address in
 limiting keys on the proxy itself.
 
 The Claude Code, Codex, and Cursor plugins call `botnote mcp`, so installing
-the npm package is enough for plugin runtime on machines that do not have a
-botnote source checkout.
+the `botnote` npm package is enough for plugin runtime on machines that do not
+have a botnote source checkout.
 
 ### CLI commands
 
@@ -146,18 +159,19 @@ BOTNOTE_TEST_DATABASE_URL=postgres://botnote:botnote@127.0.0.1:55434/botnote_tes
 Releases publish from CI. Bump the version and push the tag:
 
 ```bash
-pnpm version patch -m "Release %s"   # bumps package.json + every plugin manifest, commits, tags
+pnpm version patch -m "Release %s"   # bumps both packages + every plugin manifest, commits, tags
 git push --follow-tags
 ```
 
-The `v*` tag triggers `.github/workflows/publish-npm.yml`, which typechecks,
-runs the full test suite, builds, and publishes to npm through OIDC trusted
-publishing. No npm token is involved, and `npm publish` should never be run
+Both packages always share one version number. The `v*` tag triggers
+`.github/workflows/publish-npm.yml`, which typechecks, runs the full test
+suite, builds, and publishes `botnote` and then `botnote-server` to npm through
+OIDC trusted publishing. No npm token is involved, and `npm publish` should never be run
 from a developer machine — a local publish will fail, and npm reports that
 failure as a misleading `404 Not Found - PUT`.
 
-Check a release with `gh run list --workflow=publish-npm.yml` and
-`npm view botnote version`. The registry manifest updates a few minutes before
+Check a release with `gh run list --workflow=publish-npm.yml`,
+`npm view botnote version` and `npm view botnote-server version`. The registry manifest updates a few minutes before
 the tarball finishes reaching the CDN, so a brief `npx botnote@<version>` 404
 right after a successful publish is expected.
 
@@ -534,4 +548,16 @@ project in botnote for ongoing work.
 
 ## License
 
-MIT.
+The license depends on the directory:
+
+- The daemon, `botnote-server` (`src/`, `web/` and everything not listed
+  below), is licensed under the [GNU Affero General Public License v3.0
+  only](LICENSE).
+- The CLI and MCP server, `botnote` (`packages/cli/`), and the editor plugin,
+  skills and marketplace manifests (`plugins/`, `.claude-plugin/`,
+  `.cursor-plugin/`, `.agents/`) are licensed under the [MIT
+  License](packages/cli/LICENSE).
+
+Clients that only talk to the daemon over HTTP or MCP are not affected by the
+AGPL. Releases up to and including v0.2.16 were published entirely under MIT
+and stay available under MIT. See [LICENSING.md](LICENSING.md) for details.

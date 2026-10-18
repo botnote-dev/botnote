@@ -1,10 +1,10 @@
 {
-  "name": "botnote",
+  "name": "botnote-server",
   "version": "0.2.16",
-  "description": "Notion for bots. Lightweight project + notes + memory store, agent-first.",
+  "description": "The botnote daemon: REST API, web UI and Postgres storage for the agent-first task + memory store.",
   "type": "module",
   "packageManager": "pnpm@10.33.0",
-  "license": "MIT",
+  "license": "AGPL-3.0-only",
   "homepage": "https://botnote.net",
   "repository": {
     "type": "git",
@@ -18,10 +18,11 @@
     "mcp",
     "memory",
     "notes",
-    "tasks"
+    "tasks",
+    "server"
   ],
   "bin": {
-    "botnote": "dist/bin.js"
+    "botnote-server": "dist/cli.js"
   },
   "main": "./dist/cli.js",
   "types": "./dist/cli.d.ts",
@@ -40,16 +41,17 @@
     "dev": "tsx watch src/cli.ts",
     "start": "node dist/cli.js",
     "clean": "node -e \"require('node:fs').rmSync('dist',{recursive:true,force:true}); require('node:fs').rmSync('web/dist',{recursive:true,force:true})\"",
-    "build": "pnpm clean && pnpm --dir web build && pnpm build:server",
-    "build:server": "node -e \"require('node:fs').rmSync('dist',{recursive:true,force:true})\" && tsc -p tsconfig.json && mkdir -p dist/db/migrations && cp -R src/db/migrations/. dist/db/migrations/ && chmod +x dist/bin.js",
+    "build": "pnpm clean && pnpm --dir web build && pnpm build:server && pnpm build:cli",
+    "build:server": "node -e \"require('node:fs').rmSync('dist',{recursive:true,force:true})\" && tsc -p tsconfig.json && mkdir -p dist/db/migrations && cp -R src/db/migrations/. dist/db/migrations/ && chmod +x dist/cli.js",
+    "build:cli": "pnpm --dir packages/cli build",
     "check:plugin-versions": "node scripts/check-plugin-versions.mjs",
     "sync:plugin-versions": "node scripts/sync-plugin-versions.mjs",
     "prepack": "pnpm check:plugin-versions && pnpm build",
-    "version": "pnpm sync:plugin-versions && pnpm check:plugin-versions && git add package.json .claude-plugin/marketplace.json .cursor-plugin/marketplace.json plugins/botnote/.claude-plugin/plugin.json plugins/botnote/.codex-plugin/plugin.json plugins/botnote/.cursor-plugin/plugin.json",
+    "version": "pnpm sync:plugin-versions && pnpm check:plugin-versions && git add package.json packages/cli/package.json .claude-plugin/marketplace.json .cursor-plugin/marketplace.json plugins/botnote/.claude-plugin/plugin.json plugins/botnote/.codex-plugin/plugin.json plugins/botnote/.cursor-plugin/plugin.json",
     "bump:patch": "pnpm version patch",
     "bump:minor": "pnpm version minor",
     "bump:major": "pnpm version major",
-    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p packages/cli/tsconfig.json --noEmit",
     "test": "vitest run --no-file-parallelism",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "tsx src/db/migrate.ts",
@@ -62,7 +64,6 @@
     "@fastify/static": "^9.1.3",
     "@fastify/swagger": "^9.7.0",
     "@fastify/swagger-ui": "^5.2.6",
-    "@modelcontextprotocol/sdk": "^1.0.0",
     "drizzle-orm": "^0.36.0",
     "fastify": "^5.0.0",
     "fastify-type-provider-zod": "^4.0.2",
@@ -72,6 +73,7 @@
     "zod": "^3.23.0"
   },
   "devDependencies": {
+    "@modelcontextprotocol/sdk": "^1.0.0",
     "@types/node": "^22.0.0",
     "@types/pg": "^8.11.0",
     "drizzle-kit": "^0.28.0",
