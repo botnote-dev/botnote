@@ -1,8 +1,8 @@
 import type {
-  CreateCommentInput,
   CreateNoteInput,
   CreateProjectInput,
   CreateTaskInput,
+  CreateWorklogEntryInput,
   CreatedToken,
   Entity,
   EntityRevision,
@@ -143,10 +143,10 @@ export const api = {
 
   childEntities: (id: string) => request<Entity[]>(`/v1/entities/${id}/children`),
 
-  listComments: (id: string, limit = 500) =>
-    request<Entity[]>(`/v1/entities/${id}/comments?limit=${limit}`),
-  addComment: (id: string, input: CreateCommentInput) =>
-    request<Entity>(`/v1/entities/${id}/comments`, {
+  listWorklog: (id: string, limit = 500) =>
+    request<Entity[]>(`/v1/entities/${id}/worklog?limit=${limit}`),
+  addWorklogEntry: (id: string, input: CreateWorklogEntryInput) =>
+    request<Entity>(`/v1/entities/${id}/worklog`, {
       method: "POST",
       body: JSON.stringify(input)
     }),

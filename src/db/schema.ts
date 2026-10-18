@@ -35,7 +35,7 @@ const tsvector = customType<{ data: string }>({
   }
 });
 
-export const ENTITY_KINDS = ["task", "note", "comment", "feedback"] as const;
+export const ENTITY_KINDS = ["task", "note", "worklog", "feedback"] as const;
 export type EntityKind = (typeof ENTITY_KINDS)[number];
 
 export const FEEDBACK_CATEGORIES = ["bug", "feature", "friction", "idea"] as const;

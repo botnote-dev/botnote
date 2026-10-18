@@ -18,7 +18,7 @@ export interface McpServerContext {
 
 // Inline kind constants so the MCP package can be packaged without pulling
 // drizzle / the db schema module at runtime.
-const ENTITY_KINDS = ["task", "note", "comment", "feedback"] as const;
+const ENTITY_KINDS = ["task", "note", "worklog", "feedback"] as const;
 const FEEDBACK_CATEGORIES = ["bug", "feature", "friction", "idea"] as const;
 const ACTOR_KINDS = ["human", "agent", "system"] as const;
 const TASK_STATUSES = [
@@ -58,7 +58,7 @@ function parseKeySeq(ref: string): { projectKey: string; sequenceId: number } | 
  * backend can resolve UUID / prefix as before.
  */
 /**
- * `id` plus its tolerated aliases, for the comment tools. Every field is
+ * `id` plus its tolerated aliases, for the worklog tools. Every field is
  * optional at the schema level and `pickEntityRef` enforces that one arrived,
  * so a wrong-but-reasonable param name produces a useful error instead of a
  * schema rejection the agent cannot act on.
@@ -199,7 +199,7 @@ References:
 - Refer to tasks and notes by their KEY-SEQ identifier (e.g. BOT-55) when talking to the user, never by UUID.
 
 Worklog:
-- When pausing or finishing work on a task, record progress with add_comment (what was done, what's next, blockers). The opening brief surfaces the latest comment per in_progress task, so this is how the next session resumes.
+- When pausing or finishing work on a task, record progress with add_worklog (what was done, what's next, blockers). The opening brief surfaces the latest worklog entry per in_progress task, so this is how the next session resumes.
 
 Memory hygiene:
 - When a stored fact becomes outdated (changed decision, corrected detail), remember the new fact with supersedes=<old note id> instead of leaving both or editing history away. Superseded notes are downweighted in search but stay readable.
@@ -247,7 +247,7 @@ export function buildMcpServer(ctx: McpServerContext): McpServer {
 
   /**
    * Markdown section listing an entity's child work items (subtasks/notes via
-   * parentId or parent_of edges, comments excluded), or "" when it has none.
+   * parentId or parent_of edges, worklog entries excluded), or "" when it has none.
    * Surfaced from get_entity so "can this milestone be closed?" never needs a
    * whole-project dump.
    */
@@ -805,7 +805,7 @@ export function buildMcpServer(ctx: McpServerContext): McpServer {
         "Update fields on an existing task or note. Pass ONLY the fields you want to change — omitted fields are left untouched.\n" +
         "\n" +
         "Common transitions:\n" +
-        "- task completion: `status='done'`. Add a closing `add_comment` worklog entry summarizing what was done.\n" +
+        "- task completion: `status='done'`. Add a closing `add_worklog` entry summarizing what was done.\n" +
         "- task cancellation / give up: `status='rejected'`.\n" +
         "- start work: `status='in_progress'` ONLY when work actually begins in this turn (not just on every mention).\n" +
         "- move between projects: pass `projectId` (or `null` to move to workspace scope).\n" +
@@ -895,11 +895,11 @@ export function buildMcpServer(ctx: McpServerContext): McpServer {
   );
 
   server.registerTool(
-    "add_comment",
+    "add_worklog",
     {
-      title: "Add Comment",
+      title: "Add Worklog Entry",
       description:
-        "Append a comment (worklog entry) to a task or note. Use it to record progress, decisions, blockers, or a handoff summary when pausing work — the opening brief shows the latest comment for every in_progress task. Comments are append-only.",
+        "Append a worklog entry to a task or note. Use it to record progress, decisions, blockers, or a handoff summary when pausing work — the opening brief shows the latest entry for every in_progress task. Entries are append-only.",
       annotations: {
         readOnlyHint: false,
         destructiveHint: false,
@@ -910,7 +910,7 @@ export function buildMcpServer(ctx: McpServerContext): McpServer {
         id: TargetEntityRef,
         entityId: TargetEntityAlias,
         parentId: TargetEntityAlias,
-        body: z.string().min(1).describe("The comment text. Markdown allowed."),
+        body: z.string().min(1).describe("The worklog entry text. Markdown allowed."),
         actorKind: z.enum(ACTOR_KINDS).default("agent"),
         idempotencyKey: z.string().min(1).max(200).optional()
       }
@@ -919,10 +919,10 @@ export function buildMcpServer(ctx: McpServerContext): McpServer {
       try {
         const ref = pickEntityRef(target);
         const resolvedId = await resolveEntityRef(c, ref);
-        const comment = await c.addComment(resolvedId, { body, actorKind, idempotencyKey });
+        const entry = await c.addWorklogEntry(resolvedId, { body, actorKind, idempotencyKey });
         return {
           content: [
-            { type: "text", text: `added comment ${comment.id.slice(0, 8)} on ${ref}` }
+            { type: "text", text: `added worklog entry ${entry.id.slice(0, 8)} on ${ref}` }
           ]
         };
       } catch (err: unknown) {
@@ -932,11 +932,11 @@ export function buildMcpServer(ctx: McpServerContext): McpServer {
   );
 
   server.registerTool(
-    "list_comments",
+    "list_worklog",
     {
-      title: "List Comments",
+      title: "List Worklog",
       description:
-        "List the comments (worklog) on a task or note, oldest first. Read this when resuming an in_progress task to see what previous sessions did.",
+        "List the worklog entries on a task or note, oldest first. Read this when resuming an in_progress task to see what previous sessions did.",
       annotations: {
         readOnlyHint: true,
         destructiveHint: false,
@@ -952,9 +952,9 @@ export function buildMcpServer(ctx: McpServerContext): McpServer {
     async (target) => {
       try {
         const resolvedId = await resolveEntityRef(c, pickEntityRef(target));
-        const rows = await c.listComments(resolvedId);
+        const rows = await c.listWorklog(resolvedId);
         if (rows.length === 0) {
-          return { content: [{ type: "text", text: "no comments" }] };
+          return { content: [{ type: "text", text: "no worklog entries" }] };
         }
         const lines = rows.map((r) => {
           const when = (r.createdAt ?? "").slice(0, 16).replace("T", " ");

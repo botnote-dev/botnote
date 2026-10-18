@@ -4,7 +4,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { entities, workspaces } from "../src/db/schema.js";
 import { buildServer } from "../src/rest/server.js";
 import { EmbeddingService } from "../src/service/embedding.js";
-import { addComment, link, remove, update, write } from "../src/service/entities.js";
+import { addWorklogEntry, link, remove, update, write } from "../src/service/entities.js";
 import { submitFeedback } from "../src/service/feedback.js";
 import { createProject } from "../src/service/projects.js";
 import { createRecurrenceRule, skipOccurrence } from "../src/service/recurrence.js";
@@ -101,7 +101,7 @@ async function seed() {
     metadata: {},
     pinned: true
   });
-  await addComment(
+  await addWorklogEntry(
     S,
     db,
     task.id,
@@ -239,6 +239,22 @@ describe("workspace export/import", () => {
       expect(report.counts[type], type).toEqual({ imported: 0, skipped: expected.get(type) ?? 0, conflicts: 0 });
     }
     expectSameRecords(records(await collect(exportWorkspace(S, db))), rows);
+  });
+
+  it("imports pre-0.2.16 dumps whose worklog entries carry kind comment", async () => {
+    await seed();
+    const dump = await collect(exportWorkspace(S, db));
+    const legacy = dump.map((line) => line.replace('"kind":"worklog"', '"kind":"comment"'));
+    expect(legacy.some((line) => line.includes('"kind":"comment"'))).toBe(true);
+    await wipe();
+
+    const report = await importWorkspace(S, db, legacy);
+    expect(report.conflictsTotal).toBe(0);
+    const kinds = await db
+      .execute<{ kind: string }>(sql`SELECT DISTINCT kind FROM entities ORDER BY kind`)
+      .then((r) => r.rows.map((row) => row.kind));
+    expect(kinds).toContain("worklog");
+    expect(kinds).not.toContain("comment");
   });
 
   it("round-trips vectors when asked and re-embeds nothing that arrived with one", async () => {

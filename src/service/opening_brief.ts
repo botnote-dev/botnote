@@ -13,13 +13,13 @@ export interface OpeningBrief {
   agentsMd: string;
   pinnedNotes: Entity[];
   openTasks: Entity[];
-  /** Latest comment (worklog entry) per in_progress task, so a resuming
-   *  session sees where the previous one stopped. */
-  latestComments: Entity[];
+  /** Latest worklog entry per in_progress task, so a resuming session sees
+   *  where the previous one stopped. */
+  latestWorklog: Entity[];
   /** Open task id → unfinished tasks that `blocks` it. Absent when unblocked. */
   blockedBy: Record<string, Blocker[]>;
   recent: Entity[];
-  /** Token id -> token name for the authors of latestComments, so the
+  /** Token id -> token name for the authors of latestWorklog, so the
    *  worklog line can say who wrote it. */
   actorLabels: Record<string, string>;
   generatedAt: Date;
@@ -87,7 +87,7 @@ export async function openingBrief(
       openTasks.map((t) => t.id)
     )
   );
-  let latestComments: Entity[] = [];
+  let latestWorklog: Entity[] = [];
   if (inProgressIds.length > 0) {
     const rows = await db
       .select()
@@ -95,7 +95,7 @@ export async function openingBrief(
       .where(
         and(
           inWorkspace,
-          eq(entities.kind, "comment"),
+          eq(entities.kind, "worklog"),
           inArray(entities.parentId, inProgressIds),
           isNull(entities.deletedAt)
         )
@@ -106,12 +106,12 @@ export async function openingBrief(
     for (const row of rows) {
       if (!row.parentId || seen.has(row.parentId)) continue;
       seen.add(row.parentId);
-      latestComments.push(row);
+      latestWorklog.push(row);
     }
   }
 
   const actorLabels: Record<string, string> = {};
-  const authorTokenIds = latestComments.map((c) => c.actorTokenId).filter((id): id is string => !!id);
+  const authorTokenIds = latestWorklog.map((w) => w.actorTokenId).filter((id): id is string => !!id);
   if (authorTokenIds.length > 0) {
     const labels = await tokenLabels(scope, db);
     for (const id of authorTokenIds) {
@@ -125,7 +125,7 @@ export async function openingBrief(
     agentsMd: project?.agentsMd ?? "",
     pinnedNotes,
     openTasks,
-    latestComments,
+    latestWorklog,
     blockedBy,
     recent: recentRows,
     actorLabels,
@@ -231,7 +231,7 @@ export function formatOpeningBrief(brief: OpeningBrief): string {
 
   if (inProgress.length) {
     const worklogByTask = new Map(
-      brief.latestComments.map((c) => [c.parentId as string, c])
+      brief.latestWorklog.map((w) => [w.parentId as string, w])
     );
     lines.push(`## In Progress (${inProgress.length})`);
     lines.push("_Work already started. Check these before picking up anything new._");

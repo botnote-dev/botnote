@@ -95,8 +95,8 @@ botnote update OPS-12 --status in_progress --priority high
 botnote update OPS-12 --due 2026-10-08     # or --due none to clear it
 botnote update OPS-12 --title "..." --project INFRA --tags certs,staging
 
-botnote comment OPS-12 "Renewed staging, prod still pending"
-botnote done OPS-12 --comment "Both environments renewed"
+botnote worklog OPS-12 "Renewed staging, prod still pending"
+botnote done OPS-12 --worklog "Both environments renewed"
 ```
 
 `--status` accepts `open`, `in_progress`, `done`, `rejected`; `--priority`

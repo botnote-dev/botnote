@@ -17,7 +17,7 @@ const KIND_STYLE: Record<
 > = {
   task: { icon: CheckSquareIcon, variant: "info" },
   note: { icon: BrainIcon, variant: "secondary" },
-  comment: { icon: ClockCounterClockwiseIcon, variant: "warning" },
+  worklog: { icon: ClockCounterClockwiseIcon, variant: "warning" },
   feedback: { icon: MegaphoneIcon, variant: "outline" }
 };
 

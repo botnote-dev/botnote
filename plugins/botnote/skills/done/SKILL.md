@@ -24,7 +24,7 @@ When the user signals something is finished:
    - If the user indicates the work was finished earlier (e.g. "actually finished it last Friday"), also pass `completedAt` with that datetime to backdate the completion. `completedAt` can likewise fix the timestamp on an already-done task.
    - If the task is recurring, completing it may generate the next occurrence. When recurrence matters to the user's next step, call `mcp__botnote__get_recurrence` after completion and mention the next due date if one exists.
 
-4. Write a closing worklog entry with `mcp__botnote__add_comment` on the task:
+4. Write a closing worklog entry with `mcp__botnote__add_worklog` on the task:
    - `body`: 1-3 sentences — what was done, how it was verified, and any gotchas.
    - Skip only when the user said a bare "done" with no detail and the work itself happened outside this session.
    - For durable knowledge that outlives this task (decisions, conventions, gotchas future agents need without opening this task), additionally call `mcp__botnote__remember` with `parentId` set to the task.
@@ -37,4 +37,4 @@ When the user signals something is finished:
 Marked task/<id8> done: <title>
 ```
 
-If a worklog comment or note was captured, mention it briefly.
+If a worklog entry or note was captured, mention it briefly.

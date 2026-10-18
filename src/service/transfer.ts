@@ -4,7 +4,6 @@ import type { Database } from "../db/client.js";
 import {
   ACTOR_KINDS,
   EDGE_KINDS,
-  ENTITY_KINDS,
   VECTOR_DIMENSIONS,
   edges,
   entities,
@@ -18,7 +17,7 @@ import {
 } from "../db/schema.js";
 import { VERSION } from "../version.js";
 import type { Scope } from "./scope.js";
-import { Uuid } from "./types.js";
+import { EntityKindEnum, Uuid } from "./types.js";
 
 /**
  * JSON Lines workspace dump. Line 1 is the header; every later line is one
@@ -250,7 +249,7 @@ const ProjectRecord = z.object({
 const EntityRecord = z.object({
   id: Uuid,
   projectId: UuidNull,
-  kind: z.enum(ENTITY_KINDS),
+  kind: EntityKindEnum,
   title: z.string().nullable().default(null),
   body: z.string().default(""),
   tags: z.array(z.string()).default([]),

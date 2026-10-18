@@ -13,7 +13,7 @@ import {
 import { recordRevision, type RevisionSnapshot } from "./revisions.js";
 import type { Scope } from "./scope.js";
 import type {
-  CreateCommentInput,
+  CreateWorklogEntryInput,
   GetLinksInput,
   LinkInput,
   ListTagsInput,
@@ -171,25 +171,25 @@ export async function write(scope: Scope, db: Database["db"], input: WriteInput)
 }
 
 /**
- * Append a comment (worklog entry) to a task or note. The comment inherits the
- * parent's projectId so project-scoped search/recent include it, but never
- * gets a KEY-SEQ number (the sequence trigger skips kind='comment').
+ * Append a worklog entry to a task or note. The entry inherits the parent's
+ * projectId so project-scoped search/recent include it, but never gets a
+ * KEY-SEQ number (the sequence trigger skips kind='worklog').
  */
-export async function addComment(
+export async function addWorklogEntry(
   scope: Scope,
   db: Database["db"],
   parentIdOrPrefix: string,
-  input: CreateCommentInput,
+  input: CreateWorklogEntryInput,
   attribution: WriteAttribution = {}
 ): Promise<Entity> {
   const parent = await get(scope, db, parentIdOrPrefix);
   if (!parent) throw clientError(`entity ${parentIdOrPrefix} not found`, 404);
   if (parent.deletedAt) throw inTrash();
-  if (parent.kind === "comment") {
-    throw clientError("comments cannot be nested; comment on the task itself", 400);
+  if (parent.kind === "worklog") {
+    throw clientError("worklog entries cannot be nested; log on the task itself", 400);
   }
   return write(scope, db, {
-    kind: "comment",
+    kind: "worklog",
     projectId: parent.projectId,
     title: null,
     body: input.body,
@@ -206,8 +206,8 @@ export async function addComment(
   });
 }
 
-/** Comments for one parent entity, oldest first (chronological worklog). */
-export async function listComments(
+/** Worklog entries for one parent entity, oldest first. */
+export async function listWorklog(
   scope: Scope,
   db: Database["db"],
   parentIdOrPrefix: string,
@@ -222,7 +222,7 @@ export async function listComments(
       and(
         inScope(scope),
         eq(entities.parentId, entityId),
-        eq(entities.kind, "comment"),
+        eq(entities.kind, "worklog"),
         isNull(entities.deletedAt)
       )
     )
@@ -305,8 +305,8 @@ export async function update(
       .limit(1);
     if (!prior[0]) throw new Error(`entity ${id} not found`);
     if (prior[0].deletedAt) throw inTrash();
-    if (prior[0].kind === "comment") {
-      throw clientError("comments are append-only; add a new comment instead of editing", 400);
+    if (prior[0].kind === "worklog") {
+      throw clientError("worklog entries are append-only; add a new entry instead of editing", 400);
     }
     // Only touch completedAt when the status itself is changing — an unrelated
     // field update on an already-done task must not clear its completion stamp.
@@ -640,7 +640,7 @@ export async function listChildren(
 ): Promise<Entity[]> {
   // Children arrive via two linkage styles that both count: the entities.parentId
   // column (create_task / update_entity parentId) and explicit parent_of edges
-  // (the link tool). Comments also live on entities.parentId but are worklog,
+  // (the link tool). Worklog entries also live on entities.parentId but are
   // not child work items, so they are excluded.
   const childIds = await db
     .select({ toId: edges.toId })
@@ -658,7 +658,7 @@ export async function listChildren(
   return db
     .select()
     .from(entities)
-    .where(and(inScope(scope), linkage, ne(entities.kind, "comment"), isNull(entities.deletedAt)))
+    .where(and(inScope(scope), linkage, ne(entities.kind, "worklog"), isNull(entities.deletedAt)))
     .orderBy(asc(entities.createdAt));
 }
 

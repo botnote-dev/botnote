@@ -2,8 +2,11 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { sql } from "drizzle-orm";
 import type { FastifyInstance } from "fastify";
+import http from "node:http";
+import type { AddressInfo } from "node:net";
 import path from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { BotnoteHttpClient } from "../src/mcp/http-client.js";
 import { buildServer } from "../src/rest/server.js";
 import { EmbeddingService } from "../src/service/embedding.js";
 import { createTestDb } from "./test_db.js";
@@ -65,7 +68,7 @@ describe("botnote MCP", () => {
   it("lists current tools + workspace resource", async () => {
     const tools = await client.listTools();
     expect(tools.tools.map((t) => t.name).sort()).toEqual([
-      "add_comment",
+      "add_worklog",
       "configure_recurrence",
       "context",
       "create_project",
@@ -76,11 +79,11 @@ describe("botnote MCP", () => {
       "get_project",
       "get_recurrence",
       "link",
-      "list_comments",
       "list_feedback",
       "list_projects",
       "list_tags",
       "list_tasks",
+      "list_worklog",
       "opening_brief",
       "recent",
       "related",
@@ -1218,7 +1221,7 @@ describe("botnote MCP", () => {
     expect(json2.title).toBe("Batch task 2 (updated)");
   });
 
-  it("get_entity_by_key accepts a whole KEY-SEQ identifier, and comment tools accept id aliases", async () => {
+  it("get_entity_by_key accepts a whole KEY-SEQ identifier, and worklog tools accept id aliases", async () => {
     const cpResp = await client.callTool({
       name: "create_project",
       arguments: { key: "ALIAS", name: "Identifier Tolerance Test" }
@@ -1255,20 +1258,20 @@ describe("botnote MCP", () => {
       expect(json.id, `get_entity_by_key ${JSON.stringify(args)}`).toBe(taskId);
     }
 
-    // Comment tools take id, entityId, or parentId.
+    // Worklog tools take id, entityId, or parentId.
     const viaParentId = await client.callTool({
-      name: "add_comment",
+      name: "add_worklog",
       arguments: { parentId: key, body: "filed via parentId", actorKind: "agent" }
     });
     expect(viaParentId.isError).toBeFalsy();
     const viaEntityId = await client.callTool({
-      name: "add_comment",
+      name: "add_worklog",
       arguments: { entityId: taskId!, body: "filed via entityId", actorKind: "agent" }
     });
     expect(viaEntityId.isError).toBeFalsy();
 
     const listResp = await client.callTool({
-      name: "list_comments",
+      name: "list_worklog",
       arguments: { entityId: key }
     });
     const listText = (listResp.content as Array<{ text: string }>)[0]?.text ?? "";
@@ -1277,7 +1280,7 @@ describe("botnote MCP", () => {
 
     // No reference at all is still an error, and it names the accepted spellings.
     const missingResp = await client.callTool({
-      name: "add_comment",
+      name: "add_worklog",
       arguments: { body: "nowhere to go", actorKind: "agent" }
     });
     expect(missingResp.isError).toBe(true);
@@ -1309,11 +1312,86 @@ describe("botnote MCP", () => {
     expect(patched.status).toBe(409);
     expect(((await patched.json()) as { message: string }).message).toContain("restore first");
 
-    const commented = await fetch(`${baseUrl}/v1/entities/${task.id}/comments`, {
+    const logged = await fetch(`${baseUrl}/v1/entities/${task.id}/worklog`, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ body: "nope", actorKind: "agent" })
     });
-    expect(commented.status).toBe(409);
+    expect(logged.status).toBe(409);
+  });
+
+  it("REST still serves the pre-0.2.16 /comments path, latestComments field and comment kind", async () => {
+    const post = (url: string, body: unknown) =>
+      fetch(`${baseUrl}${url}`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(body)
+      });
+    const project = (await post("/v1/projects", { key: "LEGC", name: "Legacy comments" }).then((r) =>
+      r.json()
+    )) as { id: string };
+    const task = (await post("/v1/tasks", {
+      projectId: project.id,
+      title: "old plugin",
+      status: "in_progress"
+    }).then((r) => r.json())) as { id: string };
+
+    const posted = await post(`/v1/entities/${task.id}/comments`, { body: "from an old plugin", actorKind: "agent" });
+    expect(posted.status).toBe(200);
+    expect(((await posted.json()) as { kind: string }).kind).toBe("worklog");
+
+    const current = (await fetch(`${baseUrl}/v1/entities/${task.id}/worklog`).then((r) => r.json())) as Array<{
+      body: string;
+    }>;
+    expect(current.map((e) => e.body)).toEqual(["from an old plugin"]);
+    expect(await fetch(`${baseUrl}/v1/entities/${task.id}/comments`).then((r) => r.json())).toEqual(current);
+
+    const brief = (await post("/v1/opening-brief", { projectId: project.id }).then((r) => r.json())) as {
+      latestWorklog: Array<{ body: string }>;
+      latestComments: Array<{ body: string }>;
+    };
+    expect(brief.latestWorklog.map((e) => e.body)).toEqual(["from an old plugin"]);
+    expect(brief.latestComments).toEqual(brief.latestWorklog);
+
+    const recent = (await post("/v1/recent", { projectId: project.id, kinds: ["comment"] }).then((r) =>
+      r.json()
+    )) as Array<{ kind: string }>;
+    expect(recent.map((e) => e.kind)).toEqual(["worklog"]);
+  });
+
+  it("MCP client falls back to /comments only when the daemon lacks the /worklog route", async () => {
+    const seen: string[] = [];
+    const legacyDaemon = http.createServer((req, res) => {
+      req.resume();
+      seen.push(`${req.method} ${req.url}`);
+      res.setHeader("content-type", "application/json");
+      if (req.url?.startsWith("/v1/entities/gone/")) {
+        res.statusCode = 404;
+        res.end(JSON.stringify({ error: "client_error", message: "entity gone not found" }));
+      } else if (req.url?.endsWith("/comments")) {
+        res.end(JSON.stringify(req.method === "GET" ? [] : { id: "c0ffee00-0000-4000-8000-000000000000" }));
+      } else {
+        res.statusCode = 404;
+        res.end(JSON.stringify({ message: `Route ${req.method}:${req.url} not found`, error: "Not Found", statusCode: 404 }));
+      }
+    });
+    await new Promise<void>((resolve) => legacyDaemon.listen(0, "127.0.0.1", resolve));
+    try {
+      const { port } = legacyDaemon.address() as AddressInfo;
+      const c = new BotnoteHttpClient({ baseUrl: `http://127.0.0.1:${port}` });
+
+      expect((await c.addWorklogEntry("t1", { body: "x" })).id).toBe("c0ffee00-0000-4000-8000-000000000000");
+      expect(await c.listWorklog("t1")).toEqual([]);
+      await expect(c.addWorklogEntry("gone", { body: "x" })).rejects.toMatchObject({ status: 404 });
+      expect(seen).toEqual([
+        "POST /v1/entities/t1/worklog",
+        "POST /v1/entities/t1/comments",
+        "GET /v1/entities/t1/worklog",
+        "GET /v1/entities/t1/comments",
+        "POST /v1/entities/gone/worklog"
+      ]);
+    } finally {
+      await new Promise((resolve) => legacyDaemon.close(resolve));
+    }
   });
 });

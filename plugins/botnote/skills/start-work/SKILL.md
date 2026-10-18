@@ -17,7 +17,7 @@ Argument: `<task-key-or-project-key>`.
    - Confirm the entity is a task. If it is not, briefly say what was found and ask for a task key.
    - Use the task's `projectId` when present and call `mcp__botnote__opening_brief` with that `projectId`; otherwise call `mcp__botnote__opening_brief` without a `projectId`.
    - If the task is `open`, update it to `in_progress` with `mcp__botnote__update_entity`, `actorKind: "agent"`, and an idempotency key for this start-work action.
-   - If the task is already `in_progress`, continue without changing it, and call `mcp__botnote__list_comments` with the task id — the worklog records what previous sessions did and where they stopped. Summarize the latest entry in the focused-task summary.
+   - If the task is already `in_progress`, continue without changing it, and call `mcp__botnote__list_worklog` with the task id — the worklog records what previous sessions did and where they stopped. Summarize the latest entry in the focused-task summary.
    - If the task is `done`, `cancelled`, or otherwise terminal, do not reopen it automatically; ask whether the user wants to reopen or only review context.
 
 3. When only a project is resolved:
@@ -40,7 +40,7 @@ Argument: `<task-key-or-project-key>`.
 6. Treat botnote as working memory while doing the work.
    - Use `mcp__botnote__search` or `/botnote:recall` when prior decisions, related notes, similar tasks, or missing context could matter.
    - Use `mcp__botnote__remember` or `/botnote:remember` to preserve durable decisions, gotchas, useful findings, handoff notes, and final summaries.
-   - When pausing work on the task (session ending, switching focus, blocked), record a worklog entry with `mcp__botnote__add_comment`: what was done, what's next, and any blockers. This is what the next session resumes from.
+   - When pausing work on the task (session ending, switching focus, blocked), record a worklog entry with `mcp__botnote__add_worklog`: what was done, what's next, and any blockers. This is what the next session resumes from.
    - When new work emerges that is outside the current task's scope (a discovered bug, a follow-up, an idea worth doing), propose capturing it as a new task instead of silently doing it or letting it drop. Confirm before creating; batch proposals at natural checkpoints rather than interrupting for every item. Link follow-ups to the current task via `parentId` or a reference edge.
 
 7. After loading the focused context, ask the user what they want to do next unless they already gave a concrete implementation request.

@@ -8,7 +8,12 @@ import {
   RECURRENCE_ANCHORS
 } from "../db/schema.js";
 
-export const EntityKindEnum = z.enum(ENTITY_KINDS);
+/** Also accepts "comment", the pre-0.2.16 name for worklog entries, so older
+ *  plugins and export files keep working against this daemon. */
+export const EntityKindEnum = z.preprocess(
+  (value) => (value === "comment" ? "worklog" : value),
+  z.enum(ENTITY_KINDS)
+);
 export const ActorKindEnum = z.enum(ACTOR_KINDS);
 export const EdgeKindEnum = z.enum(EDGE_KINDS);
 export const ProjectStatusEnum = z.enum(PROJECT_STATUSES);
@@ -96,15 +101,15 @@ export const CreateNoteInput = z.object({
 });
 export type CreateNoteInput = z.infer<typeof CreateNoteInput>;
 
-/** Append a comment (worklog entry) to a task or note. Comments are
- *  append-only: they cannot be updated afterwards, only added or deleted. */
-export const CreateCommentInput = z.object({
+/** Append a worklog entry to a task or note. Entries are append-only: they
+ *  cannot be updated afterwards, only added or deleted. */
+export const CreateWorklogEntryInput = z.object({
   body: z.string().min(1),
   actorKind: ActorKindEnum.default("human"),
   metadata: z.record(z.unknown()).default({}),
   idempotencyKey: z.string().min(1).max(200).nullish()
 });
-export type CreateCommentInput = z.infer<typeof CreateCommentInput>;
+export type CreateWorklogEntryInput = z.infer<typeof CreateWorklogEntryInput>;
 
 export const FeedbackCategoryEnum = z.enum(FEEDBACK_CATEGORIES);
 

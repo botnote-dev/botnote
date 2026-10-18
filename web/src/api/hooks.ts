@@ -1,8 +1,8 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "./client";
 import type {
-  CreateCommentInput,
   CreateProjectInput,
+  CreateWorklogEntryInput,
   EntityKind,
   ListFeedbackInput,
   RecentInput,
@@ -86,23 +86,23 @@ export function useChildEntities(id: string | undefined) {
   });
 }
 
-/** Worklog entries (comments) on an entity, oldest first. */
-export function useComments(id: string | undefined, opts: { enabled?: boolean } = {}) {
+/** Worklog entries on an entity, oldest first. */
+export function useWorklog(id: string | undefined, opts: { enabled?: boolean } = {}) {
   return useQuery({
-    queryKey: ["comments", id],
-    queryFn: () => api.listComments(id!),
+    queryKey: ["worklog", id],
+    queryFn: () => api.listWorklog(id!),
     enabled: Boolean(id) && (opts.enabled ?? true)
   });
 }
 
-export function useAddComment() {
+export function useAddWorklogEntry() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: ({ parentId, input }: { parentId: string; input: CreateCommentInput }) =>
-      api.addComment(parentId, input),
-    onSuccess: (comment, { parentId }) => {
-      qc.invalidateQueries({ queryKey: ["comments", parentId] });
-      qc.invalidateQueries({ queryKey: ["opening-brief", comment.projectId ?? undefined] });
+    mutationFn: ({ parentId, input }: { parentId: string; input: CreateWorklogEntryInput }) =>
+      api.addWorklogEntry(parentId, input),
+    onSuccess: (entry, { parentId }) => {
+      qc.invalidateQueries({ queryKey: ["worklog", parentId] });
+      qc.invalidateQueries({ queryKey: ["opening-brief", entry.projectId ?? undefined] });
       qc.invalidateQueries({ queryKey: ["recent"] });
     }
   });

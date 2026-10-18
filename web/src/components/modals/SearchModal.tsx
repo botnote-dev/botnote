@@ -18,7 +18,7 @@ import { StatusCircle } from "../tasks/icons";
 const KIND_META: Record<EntityKind, { label: string; icon: Icon | null }> = {
   task: { label: "task", icon: null },
   note: { label: "memory", icon: BrainIcon },
-  comment: { label: "worklog", icon: ClockCounterClockwiseIcon },
+  worklog: { label: "worklog", icon: ClockCounterClockwiseIcon },
   feedback: { label: "feedback", icon: MegaphoneIcon }
 };
 

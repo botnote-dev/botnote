@@ -5,14 +5,14 @@ import { Readable } from "node:stream";
 import { z } from "zod";
 import type { Entity, Token } from "../db/schema.js";
 import {
-  addComment,
+  addWorklogEntry,
   bumpAccess,
   get,
   getByKey,
   getLinks,
   link,
   listChildren,
-  listComments,
+  listWorklog,
   listRelated,
   listTags,
   listTrash,
@@ -63,11 +63,11 @@ import { tasksRange } from "../service/tasks.js";
 import { exportWorkspace, importWorkspace } from "../service/transfer.js";
 import { createToken, listTokens, revokeToken, tokenLabels } from "../service/tokens.js";
 import {
-  CreateCommentInput,
   CreateFeedbackInput,
   CreateNoteInput,
   CreateProjectInput,
   CreateTaskInput,
+  CreateWorklogEntryInput,
   CreateTokenInput,
   EmbeddingBackfillInput,
   GetLinksInput,
@@ -396,7 +396,9 @@ export async function registerRoutes(
         ...brief,
         pinnedNotes: serializeEntities(brief.pinnedNotes),
         openTasks: serializeEntities(brief.openTasks),
-        latestComments: serializeEntities(brief.latestComments),
+        latestWorklog: serializeEntities(brief.latestWorklog),
+        // Pre-0.2.16 plugins read the old field name.
+        latestComments: serializeEntities(brief.latestWorklog),
         recent: serializeEntities(brief.recent),
         markdown: formatOpeningBrief(brief)
       };
@@ -423,7 +425,9 @@ export async function registerRoutes(
         ...brief,
         pinnedNotes: serializeEntities(brief.pinnedNotes),
         openTasks: serializeEntities(brief.openTasks),
-        latestComments: serializeEntities(brief.latestComments),
+        latestWorklog: serializeEntities(brief.latestWorklog),
+        // Pre-0.2.16 plugins read the old field name.
+        latestComments: serializeEntities(brief.latestWorklog),
         recent: serializeEntities(brief.recent),
         markdown: formatOpeningBrief(brief)
       };
@@ -501,7 +505,7 @@ export async function registerRoutes(
       schema: {
         tags: ["entities"],
         summary:
-          "List child work items (subtasks/notes) of an entity, via parentId or parent_of edges; comments excluded",
+          "List child work items (subtasks/notes) of an entity, via parentId or parent_of edges; worklog entries excluded",
         params: EntityIdParams
       }
     },
@@ -762,51 +766,60 @@ export async function registerRoutes(
     }
   );
 
-  app.post(
-    "/v1/entities/:id/comments",
-    {
-      schema: {
-        tags: ["entities"],
-        summary: "Append a comment (worklog entry) to a task or note",
-        description:
-          "Comments are append-only progress notes. The latest comment per in_progress task is surfaced in the opening brief.",
-        params: EntityIdParams,
-        body: CreateCommentInput
-      }
-    },
-    async (req) => {
-      const { id } = EntityIdParams.parse(req.params);
-      const body = CreateCommentInput.parse(req.body);
-      const entity = await addComment(req.scope, ctx.db, id, body, {
-        actorTokenId: req.actorTokenId
-      });
-      if (ctx.embedding.isEnabled()) {
-        ctx.embedding.enqueue(entity.id, entity.body);
-      }
-      return serializeEntity(entity);
-    }
-  );
-
-  const ListCommentsQuery = z.object({
+  const ListWorklogQuery = z.object({
     limit: z.coerce.number().int().positive().max(500).default(50)
   });
 
-  app.get(
-    "/v1/entities/:id/comments",
-    {
-      schema: {
-        tags: ["entities"],
-        summary: "List comments for an entity, oldest first",
-        params: EntityIdParams,
-        querystring: ListCommentsQuery
+  // `/comments` is the pre-0.2.16 path. Plugins run their own MCP client
+  // against this daemon, so older ones keep calling it after an upgrade.
+  for (const [path, deprecated] of [
+    ["/v1/entities/:id/worklog", false],
+    ["/v1/entities/:id/comments", true]
+  ] as const) {
+    app.post(
+      path,
+      {
+        schema: {
+          tags: ["entities"],
+          summary: "Append a worklog entry to a task or note",
+          description:
+            "Worklog entries are append-only progress notes. The latest entry per in_progress task is surfaced in the opening brief.",
+          deprecated,
+          params: EntityIdParams,
+          body: CreateWorklogEntryInput
+        }
+      },
+      async (req) => {
+        const { id } = EntityIdParams.parse(req.params);
+        const body = CreateWorklogEntryInput.parse(req.body);
+        const entity = await addWorklogEntry(req.scope, ctx.db, id, body, {
+          actorTokenId: req.actorTokenId
+        });
+        if (ctx.embedding.isEnabled()) {
+          ctx.embedding.enqueue(entity.id, entity.body);
+        }
+        return serializeEntity(entity);
       }
-    },
-    async (req) => {
-      const { id } = EntityIdParams.parse(req.params);
-      const query = ListCommentsQuery.parse(req.query);
-      return serializeEntities(await listComments(req.scope, ctx.db, id, query.limit));
-    }
-  );
+    );
+
+    app.get(
+      path,
+      {
+        schema: {
+          tags: ["entities"],
+          summary: "List worklog entries for an entity, oldest first",
+          deprecated,
+          params: EntityIdParams,
+          querystring: ListWorklogQuery
+        }
+      },
+      async (req) => {
+        const { id } = EntityIdParams.parse(req.params);
+        const query = ListWorklogQuery.parse(req.query);
+        return serializeEntities(await listWorklog(req.scope, ctx.db, id, query.limit));
+      }
+    );
+  }
 
   app.post(
     "/v1/feedback",

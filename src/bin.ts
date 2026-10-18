@@ -128,11 +128,11 @@ Usage:
                                            Create a task
   botnote note "<body>" [--project KEY] [--pin]
                                            Create a note (no title)
-  botnote done TASK [--comment "..."]      Mark a task done, optionally with a worklog entry
+  botnote done TASK [--worklog "..."]      Mark a task done, optionally with a worklog entry
   botnote update TASK [--status S] [--priority P] [--due YYYY-MM-DD|none]
                       [--title "..."] [--project KEY] [--tags a,b]
                                            Update a task or note
-  botnote comment TASK "<body>"            Append a worklog comment
+  botnote worklog TASK "<body>"            Append a worklog entry
   botnote recurrence TASK                  Show recurrence for a task
   botnote skip TASK [--reason "..."]       Skip current recurring occurrence
   botnote stop-recurrence TASK             Stop a task's recurrence series
@@ -507,7 +507,7 @@ async function cmdUpdate(args: Args): Promise<void> {
 async function cmdDone(args: Args): Promise<void> {
   const identifier = args.positional[0];
   if (!identifier) {
-    console.error('usage: botnote done TASK [--comment "..."]');
+    console.error('usage: botnote done TASK [--worklog "..."]');
     process.exit(1);
   }
   const target = await resolveEntity(identifier);
@@ -515,28 +515,28 @@ async function cmdDone(args: Args): Promise<void> {
   console.log(`✓ done ${describeEntity(identifier, updated)}`);
   // A closing worklog entry is what the next session reads first, so make it
   // one command instead of two.
-  if (typeof args.flags.comment === "string") {
-    await callApi<Entity>("POST", `/v1/entities/${target.id}/comments`, {
-      body: args.flags.comment,
+  if (typeof args.flags.worklog === "string") {
+    await callApi<Entity>("POST", `/v1/entities/${target.id}/worklog`, {
+      body: args.flags.worklog,
       actorKind: "human"
     });
-    console.log("  worklog comment added");
+    console.log("  worklog entry added");
   }
 }
 
-async function cmdComment(args: Args): Promise<void> {
+async function cmdWorklog(args: Args): Promise<void> {
   const [identifier, ...bodyParts] = args.positional;
   const body = bodyParts.join(" ").trim();
   if (!identifier || !body) {
-    console.error('usage: botnote comment TASK "<body>"');
+    console.error('usage: botnote worklog TASK "<body>"');
     process.exit(1);
   }
   const target = await resolveEntity(identifier);
-  const comment = await callApi<Entity>("POST", `/v1/entities/${target.id}/comments`, {
+  const entry = await callApi<Entity>("POST", `/v1/entities/${target.id}/worklog`, {
     body,
     actorKind: "human"
   });
-  console.log(`✓ commented on ${identifier} (${comment.id.slice(0, 8)})`);
+  console.log(`✓ logged on ${identifier} (${entry.id.slice(0, 8)})`);
 }
 
 async function cmdRecurrence(args: Args): Promise<void> {
@@ -764,8 +764,8 @@ async function main(): Promise<void> {
       return cmdDone(args);
     case "update":
       return cmdUpdate(args);
-    case "comment":
-      return cmdComment(args);
+    case "worklog":
+      return cmdWorklog(args);
     case "search":
       return cmdSearch(args);
     case "export":

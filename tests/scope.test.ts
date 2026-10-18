@@ -6,12 +6,12 @@ import { buildServer } from "../src/rest/server.js";
 import type { AuthConfig } from "../src/rest/auth.js";
 import { EmbeddingService } from "../src/service/embedding.js";
 import {
-  addComment,
+  addWorklogEntry,
   get,
   getByKey,
   link,
   listChildren,
-  listComments,
+  listWorklog,
   listTags,
   listTrash,
   recent,
@@ -120,15 +120,15 @@ describe("workspace scope: isolation across workspaces", () => {
     expect(briefB.recent.map((t) => t.id)).toEqual([b.id]);
   });
 
-  it("refuses cross-workspace updates, comments, parents and links", async () => {
+  it("refuses cross-workspace updates, worklog entries, parents and links", async () => {
     const a = await write(A, db, taskInput("owner A"));
     const b = await write(B, db, taskInput("owner B"));
 
     await expect(update(B, db, a.id, { title: "hijacked" })).rejects.toThrow(/not found/);
     expect((await get(A, db, a.id))?.title).toBe("owner A");
 
-    await expect(addComment(B, db, a.id, { body: "nope", actorKind: "agent" })).rejects.toThrow(/not found/);
-    expect(await listComments(B, db, a.id)).toEqual([]);
+    await expect(addWorklogEntry(B, db, a.id, { body: "nope", actorKind: "agent" })).rejects.toThrow(/not found/);
+    expect(await listWorklog(B, db, a.id)).toEqual([]);
 
     await expect(write(B, db, taskInput("child of A", null, { parentId: a.id }))).rejects.toThrow(/not found/);
     await expect(update(A, db, a.id, { parentId: b.id })).rejects.toThrow(/not found/);

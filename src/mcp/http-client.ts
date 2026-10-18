@@ -33,6 +33,17 @@ export class BotnoteHttpError extends Error {
   }
 }
 
+/** A 404 for the route itself, as opposed to a route reporting a missing entity. */
+function isMissingRoute(err: unknown): boolean {
+  if (!(err instanceof BotnoteHttpError) || err.status !== 404) return false;
+  try {
+    const parsed = JSON.parse(err.body) as { path?: unknown; message?: unknown };
+    return parsed.path !== undefined || String(parsed.message ?? "").startsWith("Route ");
+  } catch {
+    return false;
+  }
+}
+
 export class BotnoteHttpClient {
   constructor(private opts: HttpClientOptions) {}
 
@@ -73,6 +84,17 @@ export class BotnoteHttpClient {
     const ct = res.headers.get("content-type") ?? "";
     if (!ct.includes("application/json")) return (await res.text()) as T;
     return (await res.json()) as T;
+  }
+
+  private async worklogRequest<T>(method: string, id: string, body?: unknown): Promise<T> {
+    try {
+      return await this.request<T>(method, `/v1/entities/${id}/worklog`, body);
+    } catch (err) {
+      // Daemons before 0.2.16 only serve the old `/comments` path, and the
+      // plugin can update before the daemon is redeployed.
+      if (!isMissingRoute(err)) throw err;
+      return this.request<T>(method, `/v1/entities/${id}/comments`, body);
+    }
   }
 
   // ----- projects -----
@@ -116,8 +138,8 @@ export class BotnoteHttpClient {
   listChildren(id: string) {
     return this.request<EntityDTO[]>("GET", `/v1/entities/${id}/children`);
   }
-  listComments(id: string) {
-    return this.request<EntityDTO[]>("GET", `/v1/entities/${id}/comments`);
+  listWorklog(id: string) {
+    return this.worklogRequest<EntityDTO[]>("GET", id);
   }
   recent(body: RecentBody) {
     return this.request<EntityDTO[]>("POST", "/v1/recent", body);
@@ -140,8 +162,8 @@ export class BotnoteHttpClient {
   updateEntity(id: string, body: UpdateEntityBody) {
     return this.request<EntityDTO>("PATCH", `/v1/entities/${id}`, body);
   }
-  addComment(id: string, body: CreateCommentBody) {
-    return this.request<EntityDTO>("POST", `/v1/entities/${id}/comments`, body);
+  addWorklogEntry(id: string, body: CreateWorklogEntryBody) {
+    return this.worklogRequest<EntityDTO>("POST", id, body);
   }
   submitFeedback(body: CreateFeedbackBody) {
     return this.request<EntityDTO>("POST", "/v1/feedback", body);
@@ -243,7 +265,7 @@ export interface ProjectDTO {
 export interface EntityDTO {
   id: string;
   projectId: string | null;
-  kind: "task" | "note" | "comment" | "feedback";
+  kind: "task" | "note" | "worklog" | "feedback";
   title: string | null;
   body: string;
   tags: string[];
@@ -313,7 +335,7 @@ export interface OpeningBriefDTO {
   project: ProjectDTO | null;
   pinnedNotes: EntityDTO[];
   openTasks: EntityDTO[];
-  latestComments?: EntityDTO[];
+  latestWorklog?: EntityDTO[];
   recentActivity: EntityDTO[];
   agentsMd: string;
   markdown: string;
@@ -375,7 +397,7 @@ export interface CreateFeedbackBody {
   idempotencyKey?: string;
 }
 
-export interface CreateCommentBody {
+export interface CreateWorklogEntryBody {
   body: string;
   actorKind?: string;
   metadata?: Record<string, unknown>;

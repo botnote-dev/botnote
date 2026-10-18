@@ -1,10 +1,10 @@
-export type EntityKind = "task" | "note" | "comment" | "feedback";
-export const ENTITY_KINDS: EntityKind[] = ["task", "note", "comment", "feedback"];
+export type EntityKind = "task" | "note" | "worklog" | "feedback";
+export const ENTITY_KINDS: EntityKind[] = ["task", "note", "worklog", "feedback"];
 
 export type FeedbackCategory = "bug" | "feature" | "friction" | "idea";
 export const FEEDBACK_CATEGORIES: FeedbackCategory[] = ["bug", "feature", "friction", "idea"];
 
-// Kinds the UI offers in QuickCreate. Comments are created from a task's
+// Kinds the UI offers in QuickCreate. Worklog entries are created from a task's
 // drawer / by agents via MCP, not from the global quick-create.
 export const CREATABLE_KINDS: EntityKind[] = ["task", "note"];
 
@@ -288,7 +288,7 @@ export interface CreateNoteInput {
   idempotencyKey?: string | null;
 }
 
-export interface CreateCommentInput {
+export interface CreateWorklogEntryInput {
   body: string;
   actorKind?: ActorKind;
   idempotencyKey?: string | null;

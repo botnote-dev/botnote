@@ -8,14 +8,14 @@ import {
   updateEmbeddingSettings
 } from "../src/service/embedding_settings.js";
 import {
-  addComment,
+  addWorklogEntry,
   bumpAccess,
   get,
   getByKey,
   getLinks,
   link,
   listChildren,
-  listComments,
+  listWorklog,
   listTags,
   markSuperseded,
   recent,
@@ -633,7 +633,7 @@ describe("botnote service", () => {
     expect(everywhere).not.toContain(cancelledDated.id);
   });
 
-  it("listChildren unions parentId and parent_of children and excludes comments", async () => {
+  it("listChildren unions parentId and parent_of children and excludes worklog entries", async () => {
     const p = await createProject(S, db, { key: "MILE", name: "Milestone" });
     const parent = await write(S, db, {
       kind: "task",
@@ -667,14 +667,14 @@ describe("botnote service", () => {
       metadata: {}
     });
     await link(S, db, { fromId: parent.id, toId: byEdge.id, kind: "parent_of" });
-    // Worklog comments hang off parentId too but are not child work items.
-    const comment = await addComment(S, db, parent.id, { body: "worklog", actorKind: "agent" });
+    // Worklog entries hang off parentId too but are not child work items.
+    const entry = await addWorklogEntry(S, db, parent.id, { body: "worklog", actorKind: "agent" });
 
     const children = await listChildren(S, db, parent.id);
     const ids = children.map((ch) => ch.id);
     expect(ids).toContain(byColumn.id);
     expect(ids).toContain(byEdge.id);
-    expect(ids).not.toContain(comment.id);
+    expect(ids).not.toContain(entry.id);
   });
 
   it("creates a recurrence rule and generates the next scheduled occurrence on completion", async () => {
@@ -1707,7 +1707,7 @@ describe("botnote service", () => {
     expect(outgoing.map((l) => l.entity.id)).toEqual([child.id]);
   });
 
-  it("addComment appends a worklog entry that inherits the project but no sequence id", async () => {
+  it("addWorklogEntry appends a worklog entry that inherits the project but no sequence id", async () => {
     const p = await createProject(S, db, { key: "CMT", name: "CMT Project" });
     const task = await write(S, db, {
       kind: "task",
@@ -1720,19 +1720,19 @@ describe("botnote service", () => {
       metadata: {}
     });
 
-    const c1 = await addComment(S, db, task.id, {
+    const c1 = await addWorklogEntry(S, db, task.id, {
       body: "Implemented the parser, tests green.",
       actorKind: "agent",
       metadata: {},
       idempotencyKey: "cmt-1"
     });
-    expect(c1.kind).toBe("comment");
+    expect(c1.kind).toBe("worklog");
     expect(c1.parentId).toBe(task.id);
     expect(c1.projectId).toBe(p.id);
     expect(c1.sequenceId).toBeNull();
 
     // idempotent re-write returns the same row
-    const again = await addComment(S, db, task.id, {
+    const again = await addWorklogEntry(S, db, task.id, {
       body: "Implemented the parser, tests green.",
       actorKind: "agent",
       metadata: {},
@@ -1740,21 +1740,21 @@ describe("botnote service", () => {
     });
     expect(again.id).toBe(c1.id);
 
-    await addComment(S, db, task.id, {
+    await addWorklogEntry(S, db, task.id, {
       body: "Blocked on the flaky CI runner.",
       actorKind: "agent",
       metadata: {}
     });
-    const all = await listComments(S, db, task.id);
+    const all = await listWorklog(S, db, task.id);
     expect(all.map((c) => c.body)).toEqual([
       "Implemented the parser, tests green.",
       "Blocked on the flaky CI runner."
     ]);
 
-    // append-only: comments reject updates, nesting is refused
+    // append-only: entries reject updates, nesting is refused
     await expect(update(S, db, c1.id, { body: "rewritten" })).rejects.toThrow(/append-only/);
     await expect(
-      addComment(S, db, c1.id, { body: "nested", actorKind: "agent", metadata: {} })
+      addWorklogEntry(S, db, c1.id, { body: "nested", actorKind: "agent", metadata: {} })
     ).rejects.toThrow(/nested/);
   });
 
@@ -1840,7 +1840,7 @@ describe("botnote service", () => {
     await link(S, db, { fromId: parent.id, toId: viaEdge.id, kind: "parent_of" });
     const gone = await mk("Dropped idea", "open", parent.id);
     await remove(S, db, gone.id);
-    await addComment(S, db, parent.id, { body: "worklog, not a sub-task", actorKind: "agent", metadata: {} });
+    await addWorklogEntry(S, db, parent.id, { body: "worklog, not a sub-task", actorKind: "agent", metadata: {} });
     await write(S, db, {
       kind: "note",
       projectId: p.id,
@@ -1922,7 +1922,7 @@ describe("botnote service", () => {
     expect(decorated.get(note.id)).not.toHaveProperty("subtasks");
   });
 
-  it("openingBrief surfaces the latest worklog comment for in_progress tasks", async () => {
+  it("openingBrief surfaces the latest worklog entry for in_progress tasks", async () => {
     const p = await createProject(S, db, { key: "CMT2", name: "CMT2 Project" });
     const task = await write(S, db, {
       kind: "task",
@@ -1934,16 +1934,16 @@ describe("botnote service", () => {
       actorKind: "human",
       metadata: {}
     });
-    await addComment(S, db, task.id, { body: "First log.", actorKind: "agent", metadata: {} });
-    await addComment(S, db, task.id, {
+    await addWorklogEntry(S, db, task.id, { body: "First log.", actorKind: "agent", metadata: {} });
+    await addWorklogEntry(S, db, task.id, {
       body: "Second log — stopped at the REST layer.",
       actorKind: "agent",
       metadata: {}
     });
 
     const brief = await openingBrief(S, db, { projectId: p.id, recentLimit: 10 });
-    expect(brief.latestComments.length).toBe(1);
-    expect(brief.latestComments[0]?.body).toContain("Second log");
+    expect(brief.latestWorklog.length).toBe(1);
+    expect(brief.latestWorklog[0]?.body).toContain("Second log");
 
     const formatted = formatOpeningBrief(brief);
     expect(formatted).toContain("↳ last log");
@@ -1965,16 +1965,16 @@ describe("botnote service", () => {
     });
     expect(task.actorTokenId).toBe(token.id);
 
-    const comment = await addComment(
+    const entry = await addWorklogEntry(
       S,
       db,
       task.id,
       { body: "Attributed log.", actorKind: "agent", metadata: {} },
       { actorTokenId: token.id }
     );
-    expect(comment.actorTokenId).toBe(token.id);
+    expect(entry.actorTokenId).toBe(token.id);
 
-    const unattributed = await addComment(S, db, task.id, {
+    const unattributed = await addWorklogEntry(S, db, task.id, {
       body: "Session log.",
       actorKind: "human",
       metadata: {}
@@ -2000,7 +2000,7 @@ describe("botnote service", () => {
       actorKind: "human",
       metadata: {}
     });
-    await addComment(
+    await addWorklogEntry(
       S,
       db,
       task.id,
@@ -3632,7 +3632,7 @@ describe("trash consistency", () => {
     expect(byKey?.deletedAt).toBeInstanceOf(Date);
   });
 
-  it("refuses update and addComment on a trashed entity with 409 until it is restored", async () => {
+  it("refuses update and addWorklogEntry on a trashed entity with 409 until it is restored", async () => {
     const { task } = await trashedTask();
     const expect409 = async (promise: Promise<unknown>) => {
       await expect(promise).rejects.toMatchObject({
@@ -3641,16 +3641,16 @@ describe("trash consistency", () => {
       });
     };
     await expect409(update(S, db, task.id, { status: "done" }));
-    await expect409(addComment(S, db, task.id, { body: "late note", actorKind: "agent" }));
-    const comments = await listComments(S, db, task.id);
-    expect(comments).toHaveLength(0);
+    await expect409(addWorklogEntry(S, db, task.id, { body: "late note", actorKind: "agent" }));
+    const entries = await listWorklog(S, db, task.id);
+    expect(entries).toHaveLength(0);
 
     const back = await restore(S, db, task.id);
     expect(back?.deletedAt).toBeNull();
     const done = await update(S, db, task.id, { status: "done" });
     expect(done.status).toBe("done");
-    const comment = await addComment(S, db, task.id, { body: "after restore", actorKind: "agent" });
-    expect(comment.parentId).toBe(task.id);
+    const entry = await addWorklogEntry(S, db, task.id, { body: "after restore", actorKind: "agent" });
+    expect(entry.parentId).toBe(task.id);
   });
 
   it("link validates both endpoints and rejects self-links", async () => {

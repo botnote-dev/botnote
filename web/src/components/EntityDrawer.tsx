@@ -33,9 +33,8 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { lineDiff, withContext } from "../lib/lineDiff";
 import {
-  useAddComment,
+  useAddWorklogEntry,
   useChildEntities,
-  useComments,
   useConfigureRecurrence,
   useEntity,
   useEntityRevisions,
@@ -44,7 +43,8 @@ import {
   useSkipOccurrence,
   useSplitRecurrence,
   useStopRecurrence,
-  useUpdateEntity
+  useUpdateEntity,
+  useWorklog
 } from "../api/hooks";
 import {
   PRIORITY_LEVELS,
@@ -569,11 +569,11 @@ function DrawerContent({ id, onClose }: { id: string; onClose: () => void }) {
               </div>
             )}
 
-          {entity.kind !== "comment" && (
+          {entity.kind !== "worklog" && (
             <WorklogSection entity={entity} canWrite={entity.kind === "task"} />
           )}
 
-          {entity.kind !== "comment" && <EditsSection entity={entity} />}
+          {entity.kind !== "worklog" && <EditsSection entity={entity} />}
         </div>
       </div>
     </>
@@ -1393,7 +1393,7 @@ function entityKey(entity: Entity, projects: Project[]): string | null {
 const PARENT_RELATION: Record<EntityKind, string> = {
   task: "Sub-task of",
   note: "Memory for",
-  comment: "Worklog on",
+  worklog: "Worklog on",
   feedback: "Linked to"
 };
 
@@ -1665,7 +1665,7 @@ function MemorySection({
 const WORKLOG_TAIL = 5;
 
 function WorklogSection({ entity, canWrite }: { entity: Entity; canWrite: boolean }) {
-  const { data, isLoading } = useComments(entity.id);
+  const { data, isLoading } = useWorklog(entity.id);
   const [showAll, setShowAll] = useState(false);
   const entries = data ?? [];
   if (!canWrite && entries.length === 0) return null;
@@ -1815,7 +1815,7 @@ function WorklogBody({ body }: { body: string }) {
 
 function WorklogComposer({ entityId, isFirst }: { entityId: string; isFirst: boolean }) {
   const [draft, setDraft] = useState("");
-  const add = useAddComment();
+  const add = useAddWorklogEntry();
   const canSubmit = draft.trim().length > 0 && !add.isPending;
 
   async function submit() {

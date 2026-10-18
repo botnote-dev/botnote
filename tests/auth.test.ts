@@ -243,7 +243,7 @@ describe("auth gate variants", () => {
 });
 
 describe("write attribution", () => {
-  it("records the bearer token on tasks, comments and feedback and labels them by token name", async () => {
+  it("records the bearer token on tasks, worklog entries and feedback and labels them by token name", async () => {
     const headers = { authorization: `Bearer ${bearer}` };
     const task = await server.inject({
       method: "POST",
@@ -260,15 +260,15 @@ describe("write attribution", () => {
     });
     const taskId = task.json().id as string;
 
-    const comment = await server.inject({
+    const entry = await server.inject({
       method: "POST",
-      url: `/v1/entities/${taskId}/comments`,
+      url: `/v1/entities/${taskId}/worklog`,
       remoteAddress: LAN_PEER,
       headers,
       payload: { body: "progress", actorKind: "agent" }
     });
-    expect(comment.statusCode).toBe(200);
-    expect(comment.json()).toMatchObject({
+    expect(entry.statusCode).toBe(200);
+    expect(entry.json()).toMatchObject({
       actorTokenId: bearerTokenId,
       actor: { kind: "agent", label: "auth-test" }
     });
@@ -289,7 +289,7 @@ describe("write attribution", () => {
     // Reads resolve the same label, including nested entities.
     const listed = await server.inject({
       method: "GET",
-      url: `/v1/entities/${taskId}/comments`,
+      url: `/v1/entities/${taskId}/worklog`,
       remoteAddress: "127.0.0.1"
     });
     expect(listed.json()[0]).toMatchObject({ actor: { label: "auth-test" } });
@@ -387,7 +387,7 @@ describe("write attribution", () => {
     const taskId = task.json().id as string;
     await server.inject({
       method: "POST",
-      url: `/v1/entities/${taskId}/comments`,
+      url: `/v1/entities/${taskId}/worklog`,
       remoteAddress: LAN_PEER,
       headers,
       payload: { body: "stopped at the migration", actorKind: "agent" }
@@ -401,6 +401,6 @@ describe("write attribution", () => {
     });
     expect(brief.statusCode).toBe(200);
     expect(brief.json().markdown).toContain("by auth-test: stopped at the migration");
-    expect(brief.json().latestComments[0]).toMatchObject({ actor: { label: "auth-test" } });
+    expect(brief.json().latestWorklog[0]).toMatchObject({ actor: { label: "auth-test" } });
   });
 });
