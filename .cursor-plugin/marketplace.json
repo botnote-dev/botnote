@@ -6,14 +6,14 @@
   },
   "metadata": {
     "description": "botnote plugins for Cursor",
-    "version": "0.2.16"
+    "version": "0.2.17"
   },
   "plugins": [
     {
       "name": "botnote",
       "source": "./plugins/botnote",
       "description": "Notion for bots — MCP server, workflow skills, and project context for Cursor.",
-      "version": "0.2.16"
+      "version": "0.2.17"
     }
   ]
 }

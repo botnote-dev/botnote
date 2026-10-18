@@ -1,6 +1,6 @@
 {
   "name": "botnote-server",
-  "version": "0.2.16",
+  "version": "0.2.17",
   "description": "The botnote daemon: REST API, web UI and Postgres storage for the agent-first task + memory store.",
   "type": "module",
   "packageManager": "pnpm@10.33.0",
