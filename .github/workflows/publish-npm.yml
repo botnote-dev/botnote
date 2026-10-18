@@ -100,5 +100,24 @@ jobs:
       - name: Build package
         run: pnpm build
 
-      - name: Publish to npm
-        run: npm publish --access public
+      # The CLI goes first: plugins launch it via `npx botnote@<version>` as soon
+      # as the tagged manifests reach users. Versions already on npm are skipped
+      # so a run that failed halfway can be re-run.
+      - name: Publish botnote (CLI, MIT)
+        working-directory: packages/cli
+        run: |
+          spec="$(node -p 'const p = require("./package.json"); `${p.name}@${p.version}`')"
+          if [ -n "$(npm view "$spec" version 2>/dev/null)" ]; then
+            echo "$spec is already on npm; skipping"
+          else
+            npm publish --access public
+          fi
+
+      - name: Publish botnote-server (daemon, AGPL-3.0-only)
+        run: |
+          spec="$(node -p 'const p = require("./package.json"); `${p.name}@${p.version}`')"
+          if [ -n "$(npm view "$spec" version 2>/dev/null)" ]; then
+            echo "$spec is already on npm; skipping"
+          else
+            npm publish --access public
+          fi

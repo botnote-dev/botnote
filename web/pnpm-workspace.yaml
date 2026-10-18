@@ -1,0 +1,2 @@
+# web/ is its own pnpm project with its own lockfile, not part of the root workspace.
+packages: []

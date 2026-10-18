@@ -1,15 +1,13 @@
-import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
+#!/usr/bin/env node
 import { createDb } from "./db/client.js";
 import { migrate } from "./db/migrate.js";
-import { BotnoteHttpClient } from "./mcp/http-client.js";
-import { buildMcpServer } from "./mcp/server.js";
 import { EmbeddingService } from "./service/embedding.js";
 import { purgeExpired } from "./service/entities.js";
 import { LOCK_KEYS, withAdvisoryLock } from "./service/locks.js";
 import { materializeScheduledRecurrences } from "./service/recurrence.js";
 import { resolveDefaultScope } from "./service/scope.js";
 import { pruneExpiredSessions } from "./service/sessions.js";
-import { DEFAULT_PORT, envValue, resolveBaseUrl } from "./config.js";
+import { DEFAULT_PORT, envValue } from "./config.js";
 import { authConfigFromEnv, isLoopback } from "./rest/auth.js";
 import { buildServer } from "./rest/server.js";
 import { VERSION } from "./version.js";
@@ -155,60 +153,14 @@ async function runRest(): Promise<void> {
   process.on("SIGTERM", () => shutdown("SIGTERM"));
 }
 
-async function runMcp(): Promise<void> {
-  // MCP stdio mode. The server is now an HTTP client of the botnote daemon
-  // (no DB connection here), so this entry point is package-portable: it can
-  // be installed via a Claude Code plugin on any machine and pointed at any
-  // daemon (loopback by default, a private network URL, a public instance...).
-  // Every log line must go to stderr so we don't corrupt the MCP framed JSON
-  // on stdout.
-  const { baseUrl, explicit } = resolveBaseUrl();
-  const client = new BotnoteHttpClient({
-    baseUrl,
-    token: envValue(process.env.BOTNOTE_TOKEN),
-    version: VERSION
-  });
-  const server = buildMcpServer({ client, version: VERSION });
-  const transport = new StdioServerTransport();
-
-  // Exit diagnostics: clients report the server "dropping mid-session" but the
-  // process itself never says why it went away. Every path out of the process
-  // leaves one stderr line so the harness log shows whether the host closed
-  // stdin, sent a signal, or the server crashed.
-  const sayExit = (reason: string) => process.stderr.write(`botnote MCP exiting: ${reason}\n`);
-  process.stdin.on("end", () => sayExit("stdin closed by host"));
-  process.stdin.on("close", () => sayExit("stdin stream closed"));
-  for (const sig of ["SIGINT", "SIGTERM", "SIGHUP"] as const) {
-    process.on(sig, () => {
-      sayExit(`received ${sig}`);
-      process.exit(0);
-    });
-  }
-  process.on("uncaughtException", (err) => {
-    sayExit(`uncaught exception: ${err?.stack ?? err}`);
-    process.exit(1);
-  });
-  process.on("unhandledRejection", (err) => {
-    sayExit(`unhandled rejection: ${err instanceof Error ? (err.stack ?? err.message) : String(err)}`);
-    process.exit(1);
-  });
-
-  await server.connect(transport);
-  process.stderr.write(
-    `botnote MCP v${VERSION} ready (stdio) → ${baseUrl}${explicit ? "" : " (default; set BOTNOTE_URL for another daemon)"}\n`
-  );
+// Old plugin configs ran `node dist/cli.js mcp`; without this they would boot
+// a second daemon instead of an MCP server.
+if (process.argv[2] === "mcp") {
+  console.error("The MCP server moved to the botnote CLI package. Run `botnote mcp` (or `npx -y botnote mcp`).");
+  process.exit(2);
 }
 
-async function main(): Promise<void> {
-  const mode = process.argv[2] ?? "rest";
-  if (mode === "mcp") {
-    await runMcp();
-    return;
-  }
-  await runRest();
-}
-
-main().catch((err) => {
+runRest().catch((err) => {
   console.error(err);
   process.exit(1);
 });

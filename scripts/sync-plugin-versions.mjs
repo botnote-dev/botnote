@@ -9,6 +9,7 @@ if (typeof packageJson.version !== "string" || packageJson.version.length === 0)
 const version = packageJson.version;
 
 const targets = [
+  { path: "packages/cli/package.json", keys: ["version"] },
   { path: ".claude-plugin/marketplace.json", keys: ["metadata.version", "plugins.0.version"] },
   { path: ".cursor-plugin/marketplace.json", keys: ["metadata.version", "plugins.0.version"] },
   { path: "plugins/botnote/.claude-plugin/plugin.json", keys: ["version"] },

@@ -17,7 +17,7 @@ Internet
 Cloudflare Tunnel  (cloudflared, tunnel "botnote" = 8e0fbf02-7774-428c-8bcf-806faac8c385)
    │  ingress: botnote.net → http://localhost:4280
    ▼
-botnote daemon  (node dist/cli.js, port 4280)
+botnote daemon  (npm botnote-server: node dist/cli.js, port 4280)
    ├─ REST API           (Fastify)
    ├─ static web UI      (@fastify/static, served from web/dist)
    └─ migrations on boot (src/cli.ts → migrate())
@@ -97,7 +97,11 @@ scripts/deploy.sh --rollback    # redeploy the tag that was live before
    there are any takes a `pg_dump` into `~/botnote-backups/recovery/` first;
 3. checks out the tag (detached), runs `pnpm install --frozen-lockfile` only
    when a lockfile changed, runs `pnpm build`;
-4. `launchctl kickstart -k` the daemon and waits until `/health` reports the
+4. if the global `botnote` CLI (`$(npm root -g)/botnote`) is a link into this
+   checkout, points it at `packages/cli/` (or at the root for tags before the
+   v0.2.17 package split), so the `botnote` command on this Mac always runs the
+   deployed version;
+5. `launchctl kickstart -k` the daemon and waits until `/health` reports the
    new version (40 s budget), then appends a line to `~/.botnote/deploy-history`.
 
 `--rollback` redeploys the previous tag from that history. Schema is not
@@ -106,8 +110,13 @@ indexes, `IF NOT EXISTS`), so the previous release keeps working on the newer
 schema. That is the rule that makes rollback safe; do not write a migration
 that breaks it.
 
-`pnpm build` = `pnpm clean && pnpm --dir web build && pnpm build:server`. The
-web build runs `tsc -b`, so it fails on type errors anywhere in `web/`.
+`pnpm build` = `pnpm clean && pnpm --dir web build && pnpm build:server && pnpm build:cli`.
+The web build runs `tsc -b`, so it fails on type errors anywhere in `web/`.
+
+The production checkout serves the daemon from the repo root
+(`dist/cli.js`); the `botnote` CLI on this Mac runs from
+`packages/cli/dist/bin.js` through the global link above. Set it up once with
+`npm link` inside `/Users/jianhua/botnote/packages/cli` if it is missing.
 
 The Cloudflare tunnel does **not** need restarting for a code deploy; it only
 proxies to port 4280.

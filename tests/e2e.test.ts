@@ -35,7 +35,7 @@ beforeAll(async () => {
 
   mcpTransport = new StdioClientTransport({
     command: "node",
-    args: ["--import", "tsx", path.join(ROOT, "src/cli.ts"), "mcp"],
+    args: ["--import", "tsx", path.join(ROOT, "packages/cli/src/bin.ts"), "mcp"],
     env: { ...process.env, BOTNOTE_URL: baseUrl, NODE_OPTIONS: "--no-warnings" }
   });
   mcpClient = new Client({ name: "e2e-test", version: "0.0.1" });

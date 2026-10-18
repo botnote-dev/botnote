@@ -2,14 +2,14 @@ import { createServer } from "node:net";
 import { describe, expect, it } from "vitest";
 import {
   BotnoteUnreachableError,
-  corsOrigins,
   DEFAULT_BASE_URL,
   DEFAULT_PORT,
   envValue,
   resolveBaseUrl,
   unreachableHint
-} from "../src/config.js";
-import { BotnoteHttpClient } from "../src/mcp/http-client.js";
+} from "../packages/cli/src/config.js";
+import { BotnoteHttpClient } from "../packages/cli/src/mcp/http-client.js";
+import { corsOrigins, DEFAULT_PORT as SERVER_DEFAULT_PORT } from "../src/config.js";
 
 async function closedPort(): Promise<number> {
   return new Promise((resolve, reject) => {
@@ -26,6 +26,10 @@ describe("default base URL", () => {
   it("points at the local daemon, never a public host", () => {
     expect(DEFAULT_BASE_URL).toBe(`http://127.0.0.1:${DEFAULT_PORT}`);
     expect(DEFAULT_BASE_URL).not.toContain("botnote.net");
+  });
+
+  it("uses the same port the daemon listens on by default", () => {
+    expect(DEFAULT_PORT).toBe(SERVER_DEFAULT_PORT);
   });
 
   it("treats empty and blank env as unset", () => {
@@ -73,8 +77,8 @@ describe("unreachable daemon messaging", () => {
 describe("corsOrigins", () => {
   it("allows loopback on the daemon port by default and nothing else", () => {
     expect(corsOrigins({})).toEqual([
-      `http://127.0.0.1:${DEFAULT_PORT}`,
-      `http://localhost:${DEFAULT_PORT}`
+      `http://127.0.0.1:${SERVER_DEFAULT_PORT}`,
+      `http://localhost:${SERVER_DEFAULT_PORT}`
     ]);
   });
 
