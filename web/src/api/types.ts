@@ -194,6 +194,7 @@ export interface SearchHit {
   entity: Entity;
   score: number;
   components: {
+    keyMatch?: number;
     bm25?: number;
     cosine?: number;
     timeDecay?: number;

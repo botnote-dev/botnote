@@ -48,7 +48,7 @@ import {
 import { eq, and } from "drizzle-orm";
 import { entities, recurrenceExceptions, recurrenceRules } from "../src/db/schema.js";
 import { listFeedback, submitFeedback } from "../src/service/feedback.js";
-import { findSimilar, search, timeDecayFor } from "../src/service/search.js";
+import { findSimilar, parseKeyRefs, search, timeDecayFor } from "../src/service/search.js";
 import { tasksRange } from "../src/service/tasks.js";
 import { consumeToken, createToken, listTokens, revokeToken } from "../src/service/tokens.js";
 import {
@@ -3933,5 +3933,91 @@ describe("search recall and ranking", () => {
 
     const hits = await search(S, db, { query: "quasar", projectId: p.id, limit: 5 });
     expect(hits.map((h) => h.entity.id)).toEqual([strong.id, weak.id]);
+  });
+});
+
+describe("search by KEY-SEQ identifier", () => {
+  async function entity(
+    projectId: string,
+    kind: "task" | "note",
+    title: string,
+    body: string
+  ) {
+    return write(S, db, {
+      kind,
+      projectId,
+      title,
+      body,
+      tags: [],
+      status: "open",
+      actorKind: "human",
+      metadata: {}
+    });
+  }
+
+  it("parseKeyRefs extracts, normalizes, and dedupes refs", () => {
+    expect(parseKeyRefs("SITE-807")).toEqual([{ projectKey: "SITE", sequenceId: 807 }]);
+    expect(parseKeyRefs("看看site-807的进度, then BOT-12 and SITE-807 again")).toEqual([
+      { projectKey: "SITE", sequenceId: 807 },
+      { projectKey: "BOT", sequenceId: 12 }
+    ]);
+    expect(parseKeyRefs("(MY_P2-3).")).toEqual([{ projectKey: "MY_P2", sequenceId: 3 }]);
+    expect(parseKeyRefs("follow-up for re-run")).toEqual([]);
+    expect(parseKeyRefs("SITE-0 SITE-807-2 x-SITE-9 123-4")).toEqual([]);
+  });
+
+  it("ranks the exact KEY-SEQ match first, ahead of notes that mention it", async () => {
+    const p = await createProject(S, db, { key: "SITE", name: "Site" });
+    const target = await entity(p.id, "task", "Backfill AI media candidates", "Scan sitemaps daily");
+    const key = `SITE-${target.sequenceId}`;
+    const mention = await entity(p.id, "note", `Follow-up for ${key}`, `${key} shipped; ${key} verified`);
+    await entity(p.id, "note", "Unrelated", "Coffee order");
+
+    const hits = await search(S, db, { query: key, limit: 5 });
+    expect(hits[0]?.entity.id).toBe(target.id);
+    expect(hits[0]?.components.keyMatch).toBeDefined();
+    expect(hits.map((h) => h.entity.id)).toContain(mention.id);
+    expect(hits.find((h) => h.entity.id === mention.id)?.components.keyMatch).toBeUndefined();
+
+    const fuzzy = await search(S, db, { query: `看看site-${target.sequenceId}的进度`, limit: 5 });
+    expect(fuzzy[0]?.entity.id).toBe(target.id);
+  });
+
+  it("keeps multiple refs in query order and skips unknown keys", async () => {
+    const p = await createProject(S, db, { key: "MULT", name: "Mult" });
+    const a = await entity(p.id, "task", "Alpha", "first");
+    const b = await entity(p.id, "note", "Beta", "second");
+
+    const hits = await search(S, db, {
+      query: `MULT-${b.sequenceId} NOPE-1 MULT-${a.sequenceId} MULT-9999`,
+      limit: 5
+    });
+    expect(hits.slice(0, 2).map((h) => h.entity.id)).toEqual([b.id, a.id]);
+  });
+
+  it("applies the kind, project, and trash filters to key matches", async () => {
+    const p = await createProject(S, db, { key: "FILT", name: "Filt" });
+    const other = await createProject(S, db, { key: "OTHR", name: "Other" });
+    const task = await entity(p.id, "task", "Filtered task", "body");
+    const trashed = await entity(p.id, "note", "Trashed note", "body");
+    await remove(S, db, trashed.id);
+    const key = `FILT-${task.sequenceId}`;
+
+    expect((await search(S, db, { query: key, kind: "task", limit: 5 }))[0]?.entity.id).toBe(task.id);
+    expect(await search(S, db, { query: key, kind: "note", limit: 5 })).toEqual([]);
+    expect(await search(S, db, { query: key, projectId: other.id, limit: 5 })).toEqual([]);
+    expect(await search(S, db, { query: `FILT-${trashed.sequenceId}`, limit: 5 })).toEqual([]);
+  });
+
+  it("findSimilar ignores KEY-SEQ refs in the new note's label", async () => {
+    const p = await createProject(S, db, { key: "SIMK", name: "Simk" });
+    const referenced = await entity(p.id, "note", "Coffee order", "Latte oat milk");
+
+    const similar = await findSimilar(S, db, {
+      title: `Follow-up to SIMK-${referenced.sequenceId}`,
+      body: "Moved the deploy window",
+      projectId: p.id
+    });
+    expect(similar.map((h) => h.entity.id)).not.toContain(referenced.id);
   });
 });

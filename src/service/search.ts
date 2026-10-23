@@ -8,6 +8,7 @@ export interface SearchHit {
   entity: Entity;
   score: number;
   components: {
+    keyMatch?: number;
     bm25?: number;
     cosine?: number;
     timeDecay?: number;
@@ -51,6 +52,38 @@ export function timeDecayFor(createdAt: Date, now: Date = new Date()): number {
 function rrfScore(rank: number | undefined): number {
   if (rank == null) return 0;
   return 1 / (RRF_K + rank);
+}
+
+// A KEY-SEQ ref in the query names one entity outright, so an exact match
+// outranks every relevance-scored hit (those top out near 0.04).
+const KEY_MATCH_SCORE = 1;
+const MAX_KEY_REFS = 10;
+const KEY_REF_RE = /(?<![A-Za-z0-9_-])([A-Za-z][A-Za-z0-9_]*)-(\d{1,9})(?![A-Za-z0-9_-])/g;
+
+export interface KeyRef {
+  projectKey: string;
+  sequenceId: number;
+}
+
+export function parseKeyRefs(query: string): KeyRef[] {
+  const seen = new Set<string>();
+  const refs: KeyRef[] = [];
+  for (const m of query.matchAll(KEY_REF_RE)) {
+    const projectKey = m[1]!.toUpperCase();
+    const sequenceId = Number.parseInt(m[2]!, 10);
+    if (sequenceId <= 0) continue;
+    const id = `${projectKey}-${sequenceId}`;
+    if (seen.has(id)) continue;
+    seen.add(id);
+    refs.push({ projectKey, sequenceId });
+    if (refs.length >= MAX_KEY_REFS) break;
+  }
+  return refs;
+}
+
+function keyMatchScore(rank: number | undefined): number {
+  if (rank == null) return 0;
+  return KEY_MATCH_SCORE / rank;
 }
 
 type IdRow = { id: string };
@@ -123,7 +156,7 @@ export async function search(
   scope: Scope,
   db: Database["db"],
   input: SearchInput,
-  opts: { queryEmbedding?: number[]; now?: Date } = {}
+  opts: { queryEmbedding?: number[]; now?: Date; matchKeys?: boolean } = {}
 ): Promise<SearchHit[]> {
   const wsFilter = sql`AND workspace_id = ${scope.workspaceId}::uuid`;
   const projectFilter = input.projectId
@@ -163,16 +196,42 @@ export async function search(
     ).rows;
   };
 
+  const keyRefs = opts.matchKeys === false ? [] : parseKeyRefs(input.query);
+  const keyRows = async (): Promise<IdRow[]> => {
+    if (keyRefs.length === 0) return [];
+    const values = sql.join(
+      keyRefs.map((r, i) => sql`(${r.projectKey}::text, ${r.sequenceId}::int, ${i}::int)`),
+      sql`, `
+    );
+    return (
+      await db.execute<IdRow>(sql`
+        SELECT entities.id
+        FROM entities
+        JOIN (
+          SELECT p.id AS ref_project_id, k.seq AS ref_seq, k.ord AS ref_ord
+          FROM (VALUES ${values}) AS k(project_key, seq, ord)
+          JOIN projects p
+            ON p.key = k.project_key AND p.workspace_id = ${scope.workspaceId}::uuid
+        ) AS refs
+          ON entities.project_id = refs.ref_project_id AND entities.sequence_id = refs.ref_seq
+        WHERE TRUE ${commonFilter}
+        ORDER BY refs.ref_ord
+      `)
+    ).rows;
+  };
+
   const hasEmbedding = !!opts.queryEmbedding && opts.queryEmbedding.length > 0;
-  const [bm25Rows, vecRows] = await Promise.all([
+  const [keyMatchRows, bm25Rows, vecRows] = await Promise.all([
+    keyRows(),
     lexicalRows(),
     hasEmbedding ? nearestRows(db, opts.queryEmbedding!, commonFilter, fetchN) : Promise.resolve([])
   ]);
 
+  const keyMap = rankMap(keyMatchRows);
   const bm25Map = rankMap(bm25Rows);
   const vecMap = rankMap(vecRows);
 
-  const ids = new Set<string>([...bm25Map.keys(), ...vecMap.keys()]);
+  const ids = new Set<string>([...keyMap.keys(), ...bm25Map.keys(), ...vecMap.keys()]);
   if (ids.size === 0) return [];
 
   const idArr = [...ids];
@@ -195,18 +254,20 @@ export async function search(
   for (const id of idArr) {
     const entity = entityMap.get(id);
     if (!entity) continue;
+    const keyMatch = keyMatchScore(keyMap.get(id));
     const bm25 = rrfScore(bm25Map.get(id));
     const cosine = rrfScore(vecMap.get(id));
     const timeDecay = timeDecayFor(entity.createdAt, now);
     const kindWeight = KIND_WEIGHTS[entity.kind] ?? 0;
     const accessBoost = accessBoostFor(entity.accessCount);
     const superseded = supersededIds.has(id);
-    let score = bm25 + cosine + timeDecay + kindWeight * 0.01 + accessBoost;
+    let score = keyMatch + bm25 + cosine + timeDecay + kindWeight * 0.01 + accessBoost;
     if (superseded) score *= SUPERSEDED_MULTIPLIER;
     hits.push({
       entity,
       score,
       components: {
+        keyMatch: keyMatch || undefined,
         bm25: bm25 || undefined,
         cosine: cosine || undefined,
         timeDecay: timeDecay || undefined,
@@ -248,7 +309,7 @@ export async function findSimilar(
     scope,
     db,
     { query: label, projectId: opts.projectId ?? null, kind: "note", limit: limit + 1 },
-    opts.queryEmbedding ? { queryEmbedding: opts.queryEmbedding } : {}
+    { matchKeys: false, ...(opts.queryEmbedding ? { queryEmbedding: opts.queryEmbedding } : {}) }
   );
   return hits
     .filter((h) => h.entity.id !== opts.excludeId && !h.superseded && h.score >= SIMILAR_MIN_SCORE)
