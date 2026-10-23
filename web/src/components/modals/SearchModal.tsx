@@ -72,6 +72,8 @@ export function SearchModal() {
             const kind = KIND_META[h.entity.kind];
             const KindIcon = kind.icon;
             const projectKey = h.entity.projectId ? projectKeyById.get(h.entity.projectId) : null;
+            const idLabel =
+              projectKey && h.entity.sequenceId != null ? `${projectKey}-${h.entity.sequenceId}` : null;
             const snippet = h.entity.body.replace(/\n/g, " ").slice(0, 140);
             return (
               <CommandPalette.Item
@@ -84,16 +86,20 @@ export function SearchModal() {
                   {KindIcon ? <KindIcon size={16} /> : <StatusCircle status={h.entity.status} />}
                 </span>
                 <div className="min-w-0 flex-1">
-                  <div className="truncate text-sm text-kumo-default">{displayTitle(h.entity)}</div>
+                  <div className="flex min-w-0 items-baseline gap-2">
+                    {idLabel && (
+                      <span className="shrink-0 font-mono text-xxs text-kumo-subtle tabular-nums">
+                        {idLabel}
+                      </span>
+                    )}
+                    <span className="truncate text-sm text-kumo-default">{displayTitle(h.entity)}</span>
+                  </div>
                   {snippet && (
                     <div className="mt-0.5 truncate text-xs text-kumo-subtle">{snippet}</div>
                   )}
-                  <div className="mt-0.5 flex gap-1.5 text-xxs text-kumo-placeholder tabular-nums">
+                  <div className="mt-0.5 flex gap-1.5 text-xxs text-kumo-placeholder">
                     <span>{kind.label}</span>
-                    {projectKey && <span>· {projectKey}</span>}
-                    <span>· score {h.score.toFixed(3)}</span>
-                    {h.components.bm25 && <span>· bm25</span>}
-                    {h.components.cosine && <span>· vec</span>}
+                    {projectKey && !idLabel && <span>· {projectKey}</span>}
                   </div>
                 </div>
                 <ArrowRightIcon
