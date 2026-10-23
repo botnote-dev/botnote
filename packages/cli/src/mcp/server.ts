@@ -298,7 +298,7 @@ export function buildMcpServer(ctx: McpServerContext): McpServer {
     {
       title: "Hybrid Search",
       description:
-        "Find tasks and notes by free-text query. Uses BM25 + vector cosine + time decay merged via RRF. Pass kind='note' or kind='task' to narrow; omit to search both.",
+        "Find tasks and notes by free-text query; a KEY-SEQ identifier in the query (e.g. DEMO-12) ranks that exact item first. Uses BM25 + vector cosine + time decay merged via RRF. Pass kind='note' or kind='task' to narrow; omit to search both.",
       annotations: {
         readOnlyHint: true,
         destructiveHint: false,
