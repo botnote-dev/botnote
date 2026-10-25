@@ -1,6 +1,6 @@
 {
   "name": "botnote",
-  "version": "0.2.18",
+  "version": "0.2.19",
   "description": "botnote CLI and MCP server. Talk to a botnote daemon from the terminal or from any MCP client.",
   "type": "module",
   "license": "MIT",

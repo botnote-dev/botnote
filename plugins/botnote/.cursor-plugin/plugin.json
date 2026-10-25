@@ -1,6 +1,6 @@
 {
   "name": "botnote",
-  "version": "0.2.18",
+  "version": "0.2.19",
   "description": "Agent-native tasks, notes, memory, and project context for Cursor.",
   "author": {
     "name": "Jianhua Wang"

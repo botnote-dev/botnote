@@ -1,7 +1,7 @@
 {
   "name": "botnote",
   "displayName": "botnote",
-  "version": "0.2.18",
+  "version": "0.2.19",
   "description": "Notion for bots — capture + recall + project context for AI agents. Plugin bundles the botnote MCP server with /today, /show-todo, /remember, /recall, /add-task, /start-work, /done slash commands and a curator subagent.",
   "author": {
     "name": "Jianhua Wang"
