@@ -7,6 +7,7 @@ import type { AddressInfo } from "node:net";
 import path from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { BotnoteHttpClient } from "../packages/cli/src/mcp/http-client.js";
+import { mentionsRemainingWork } from "../packages/cli/src/mcp/server.js";
 import { buildServer } from "../src/rest/server.js";
 import { EmbeddingService } from "../src/service/embedding.js";
 import { createTestDb } from "./test_db.js";
@@ -388,6 +389,89 @@ describe("botnote MCP", () => {
     expect(briefText).toMatch(/Ship botnote v0/);
     expect(briefText).toMatch(/\[MCP-\d+\] Ship botnote v0/);
     expect(briefText).toMatch(/MCP-\d+ · Ship botnote v0/);
+    expect(briefText).toContain("Task capture:");
+  });
+
+  it("nudges task capture in search, done, and worklog results", async () => {
+    const proj = await client.callTool({
+      name: "create_project",
+      arguments: { key: "NUDGE", name: "Nudge Test" }
+    });
+    const projectId = ((proj.content as Array<{ text: string }>)[0]?.text ?? "").match(
+      /[0-9a-f-]{36}/
+    )?.[0];
+    expect(projectId).toMatch(/^[0-9a-f-]{36}$/);
+    const textOf = (r: unknown) =>
+      ((r as { content: Array<{ text: string }> }).content[0]?.text ?? "");
+
+    const emptySearch = textOf(
+      await client.callTool({
+        name: "search",
+        arguments: { query: "zebra migration pipeline", projectId, kind: "task" }
+      })
+    );
+    expect(emptySearch).toContain("No matching task");
+
+    const noteSearch = textOf(
+      await client.callTool({
+        name: "search",
+        arguments: { query: "zebra migration pipeline", projectId, kind: "note" }
+      })
+    );
+    expect(noteSearch).not.toContain("No matching task");
+
+    const created = textOf(
+      await client.callTool({
+        name: "create_task",
+        arguments: { projectId, title: "Build zebra migration pipeline" }
+      })
+    );
+    const key = created.match(/NUDGE-\d+/)?.[0];
+    expect(key).toBeDefined();
+
+    const hitSearch = textOf(
+      await client.callTool({
+        name: "search",
+        arguments: { query: "zebra migration pipeline", projectId }
+      })
+    );
+    expect(hitSearch).toContain("Build zebra migration pipeline");
+    expect(hitSearch).not.toContain("No matching task");
+
+    const plainLog = textOf(
+      await client.callTool({
+        name: "add_worklog",
+        arguments: { id: key, body: "Wired the importer and verified it on sample data." }
+      })
+    );
+    expect(plainLog).not.toContain("follow-up");
+
+    const followLog = textOf(
+      await client.callTool({
+        name: "add_worklog",
+        arguments: { id: key, body: "Importer works. Next: handle duplicate rows." }
+      })
+    );
+    expect(followLog).toContain(`parentId=${key}`);
+
+    const progress = textOf(
+      await client.callTool({ name: "update_entity", arguments: { id: key, status: "in_progress" } })
+    );
+    expect(progress).not.toContain("Follow-ups:");
+
+    const done = textOf(
+      await client.callTool({ name: "update_entity", arguments: { id: key, status: "done" } })
+    );
+    expect(done).toContain(`Follow-ups:`);
+    expect(done).toContain(`parentId=${key}`);
+  });
+
+  it("detects remaining-work phrasing in worklog bodies", () => {
+    expect(mentionsRemainingWork("Next: add retries")).toBe(true);
+    expect(mentionsRemainingWork("Blocked on the API key")).toBe(true);
+    expect(mentionsRemainingWork("剩下的之后再做")).toBe(true);
+    expect(mentionsRemainingWork("后续需要补测试")).toBe(true);
+    expect(mentionsRemainingWork("Shipped and verified in prod.")).toBe(false);
   });
 
   it("write is idempotent on idempotencyKey via MCP", async () => {

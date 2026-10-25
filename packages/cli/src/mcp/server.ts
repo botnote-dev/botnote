@@ -172,6 +172,32 @@ function formatToolError(err: unknown): { isError: true; content: Array<{ type: 
   return { isError: true, content: [{ type: "text", text }] };
 }
 
+/**
+ * Task-capture nudges appended to tool results. Server instructions are read
+ * once at session start and fade as the conversation grows; a tool result sits
+ * in recent context at the exact moment a task should be created. This works
+ * in every MCP client, unlike client-specific hooks.
+ */
+const TASK_NUDGE_BRIEF =
+  "Task capture: if this session starts work that has no matching task above, create one with create_task before you begin. Log out-of-scope follow-ups as tasks too, with parentId set to the current task.";
+const TASK_NUDGE_SEARCH =
+  "No matching task. If you are about to start this work, create a task for it first.";
+
+function taskNudgeAfterDone(ref: string): string {
+  return `Follow-ups: if this work surfaced anything still to do (bugs, deferred items, next steps), create tasks for them now with parentId=${ref}.`;
+}
+
+function taskNudgeAfterWorklog(ref: string): string {
+  return `This entry mentions remaining work. Create a task for each follow-up that is not tracked yet, with parentId=${ref}.`;
+}
+
+const REMAINING_WORK_PATTERN =
+  /\b(next|todo|follow[- ]?ups?|later|remaining|blocked|blockers?|left to do)\b|下一步|待办|之后|后续|遗留|还需要|未完成/i;
+
+export function mentionsRemainingWork(body: string): boolean {
+  return REMAINING_WORK_PATTERN.test(body);
+}
+
 const ProjectKey = z
   .string()
   .min(1)
@@ -187,10 +213,12 @@ const IconName = z.string().min(1).max(40).regex(/^[a-z0-9_-]+$/);
  */
 const SERVER_INSTRUCTIONS = `botnote is the user's task + memory system. Rules for agents:
 
-Proactive task capture (propose, don't silently create):
-- When a discussion turns into a decision to build/fix/do something, propose recording it as a task before starting the work.
-- When new work emerges mid-task that is outside the current task's scope, propose capturing it as a new task (link it via parentId or a reference) instead of silently doing it or letting it drop.
-- Confirm with the user before creating. Batch proposals at natural checkpoints rather than interrupting for every item.
+Proactive task capture (create first, then tell the user):
+- Before starting work the user asked for (build, fix, change, investigate), make sure it has a botnote task. If none matches, create one with create_task, then report it in one line ("Added BOT-55: <title>"). Do not wait to be reminded.
+- When new work emerges mid-task that is outside the current task's scope (a bug found, a follow-up, a deferred "later" item), create a task for it linked via parentId instead of silently doing it or letting it drop.
+- Ask first only when the project is ambiguous or the work needs splitting into several tasks. Otherwise just create it — tasks are cheap and the user can reject them.
+- Your client's built-in todo/plan list is session-scratch and does not replace botnote tasks.
+- Skip trivial asks (questions, one-line tweaks finished in the same turn).
 
 Task scope:
 - Keep tasks small: one focused session (roughly ≤1 hour). Propose splitting bigger work into a parent milestone task plus small subtasks via parentId.
@@ -287,7 +315,7 @@ export function buildMcpServer(ctx: McpServerContext): McpServer {
     },
     async ({ projectId }) => {
       const brief = await c.openingBrief({ projectId: projectId ?? null, recentLimit: 10 });
-      return { content: [{ type: "text", text: brief.markdown }] };
+      return { content: [{ type: "text", text: `${brief.markdown}\n\n---\n${TASK_NUDGE_BRIEF}` }] };
     }
   );
 
@@ -324,16 +352,14 @@ export function buildMcpServer(ctx: McpServerContext): McpServer {
         (h, i) =>
           `${h.score.toFixed(4)} ${summaries[i]}\n    ${h.entity.body.slice(0, 200).replace(/\n/g, " ")}`
       );
-      return {
-        content: [
-          {
-            type: "text",
-            text: hits.length
-              ? `${hits.length} hit(s). embedding=${embeddingUsed ? "on" : "off"}\n\n${lines.join("\n\n")}`
-              : `no hits. embedding=${embeddingUsed ? "on" : "off"}`
-          }
-        ]
-      };
+      let text = hits.length
+        ? `${hits.length} hit(s). embedding=${embeddingUsed ? "on" : "off"}\n\n${lines.join("\n\n")}`
+        : `no hits. embedding=${embeddingUsed ? "on" : "off"}`;
+      const lookingForTasks = kind === undefined || kind === "task";
+      if (lookingForTasks && !hits.some((h) => h.entity.kind === "task")) {
+        text += `\n\n${TASK_NUDGE_SEARCH}`;
+      }
+      return { content: [{ type: "text", text }] };
     }
   );
 
@@ -651,7 +677,7 @@ export function buildMcpServer(ctx: McpServerContext): McpServer {
     {
       title: "Create Task",
       description:
-        "Create a task — a structured work item with status, optional due date, priority, and tags. Use this for anything with a state machine (open/in_progress/done). For free-form notes call `remember`.\n" +
+        "Create a task — a structured work item with status, optional due date, priority, and tags. Use this for anything with a state machine (open/in_progress/done). For free-form notes call `remember`. Call it proactively — when the user asks for work that has no task yet, or a follow-up surfaces mid-task — without waiting to be asked.\n" +
         "\n" +
         "Conventions (follow strictly):\n" +
         "- `projectId`: required. Call `list_projects` first if you don't already know the project's UUID. If user-supplied context doesn't pin a project, ask before creating.\n" +
@@ -886,6 +912,9 @@ export function buildMcpServer(ctx: McpServerContext): McpServer {
               `\n\nWarning: this task still has ${openKids.length} unfinished child task(s):\n` +
               lines.map((s) => `- ${s}`).join("\n");
           }
+          const keys = await projectKeysFor([updated]);
+          const ref = entityRefLabel(updated, updated.projectId ? (keys.get(updated.projectId) ?? null) : null);
+          text += `\n\n${taskNudgeAfterDone(ref)}`;
         }
         return { content: [{ type: "text", text }] };
       } catch (err: unknown) {
@@ -920,11 +949,9 @@ export function buildMcpServer(ctx: McpServerContext): McpServer {
         const ref = pickEntityRef(target);
         const resolvedId = await resolveEntityRef(c, ref);
         const entry = await c.addWorklogEntry(resolvedId, { body, actorKind, idempotencyKey });
-        return {
-          content: [
-            { type: "text", text: `added worklog entry ${entry.id.slice(0, 8)} on ${ref}` }
-          ]
-        };
+        let text = `added worklog entry ${entry.id.slice(0, 8)} on ${ref}`;
+        if (mentionsRemainingWork(body)) text += `\n\n${taskNudgeAfterWorklog(ref)}`;
+        return { content: [{ type: "text", text }] };
       } catch (err: unknown) {
         return formatToolError(err);
       }

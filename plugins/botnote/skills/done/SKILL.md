@@ -13,12 +13,10 @@ When the user signals something is finished:
    - Multiple plausible hits: list them and ask which one.
 
 2. If there is no clear existing task, treat this as a common one-off completion case. Users often say `done` after doing unplanned work, discovering and finishing a small new item, or completing something that was never captured.
-   - Ask before writing: `I do not see a matching task. Should I create a completed task for "<short title>"?`
-   - Infer `projectId` from the active project/context when obvious; otherwise ask for the project.
-   - Use `mcp__botnote__create_task` with `status: "done"` when the user confirms.
+   - Infer `projectId` from the active project/context when obvious, and create the completed task directly with `mcp__botnote__create_task` and `status: "done"`. Ask first only when the project is unclear.
    - If the user indicates when the work was actually finished (e.g. "did this yesterday"), pass `completedAt` with that datetime so the calendar shows it on the right day.
    - Use an executable, specific title inferred from the completed work.
-   - Do not create a task silently.
+   - Say that it was newly captured in the confirmation line, so the user can reject it.
 
 3. Mark an existing task done. Call `mcp__botnote__update_entity` with the task's `id` and `status: "done"`.
    - If the user indicates the work was finished earlier (e.g. "actually finished it last Friday"), also pass `completedAt` with that datetime to backdate the completion. `completedAt` can likewise fix the timestamp on an already-done task.
@@ -29,12 +27,14 @@ When the user signals something is finished:
    - Skip only when the user said a bare "done" with no detail and the work itself happened outside this session.
    - For durable knowledge that outlives this task (decisions, conventions, gotchas future agents need without opening this task), additionally call `mcp__botnote__remember` with `parentId` set to the task.
 
-5. If botnote itself caused friction during this task (a tool misbehaved, a capability was missing, a workflow felt awkward), file it with `mcp__botnote__submit_feedback` (category: bug/feature/friction/idea). Check `mcp__botnote__list_feedback` first to avoid duplicates.
+5. Capture follow-ups. Look back over the work: bugs found, items deferred as "later", next steps the user mentioned, or anything left out of scope. Create a task for each one not already tracked, with `parentId` set to the finished task, and list them in the confirmation. If there are none, skip this step silently.
 
-6. Confirm in one line:
+6. If botnote itself caused friction during this task (a tool misbehaved, a capability was missing, a workflow felt awkward), file it with `mcp__botnote__submit_feedback` (category: bug/feature/friction/idea). Check `mcp__botnote__list_feedback` first to avoid duplicates.
+
+7. Confirm in one line:
 
 ```text
-Marked task/<id8> done: <title>
+Marked BOT-42 done: <title>
 ```
 
-If a worklog entry or note was captured, mention it briefly.
+If a worklog entry, note, or follow-up task was captured, mention it briefly (for example `Follow-ups: BOT-43, BOT-44`).
