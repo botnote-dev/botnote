@@ -90,18 +90,18 @@ export function ProjectsSidebar() {
         <Sidebar.Group>
           <Sidebar.Menu>
             <NavItem
-              to="/"
-              icon={CalendarBlankIcon}
-              label="Tasks"
-              shortcut="g d"
-              active={isActive("/", true)}
-            />
-            <NavItem
               to="/today"
               icon={SunHorizonIcon}
               label="Today"
               shortcut="g t"
               active={isActive("/today")}
+            />
+            <NavItem
+              to="/"
+              icon={CalendarBlankIcon}
+              label="Tasks"
+              shortcut="g d"
+              active={isActive("/", true)}
             />
             <NavItem
               to="/inbox"
@@ -168,7 +168,7 @@ export function ProjectsSidebar() {
             {!isLoading && projectCount === 0 && (
               <Sidebar.MenuButton
                 size="sm"
-                className="text-kumo-subtle"
+                className="pl-3 text-kumo-subtle"
                 onClick={() => open({ kind: "new-project" })}
               >
                 No projects yet.
@@ -189,7 +189,7 @@ export function ProjectsSidebar() {
                     >
                       <Sidebar.CollapsibleTrigger
                         render={
-                          <Sidebar.MenuButton size="sm" className="text-xs font-medium text-kumo-subtle">
+                          <Sidebar.MenuButton size="sm" className="pl-3 text-xs font-medium text-kumo-subtle">
                             {PROJECT_STATUS_LABEL[status]}
                             <span className="ml-auto tabular-nums text-kumo-placeholder">{group.length}</span>
                             <Sidebar.MenuChevron className="ml-0" />
@@ -263,7 +263,7 @@ function ProjectItem({ project, active }: { project: Project; active: boolean })
         active={active}
         icon={<ProjectIcon color={project.color} icon={project.icon} size={14} />}
         title={archived ? `${project.name} (archived)` : project.name}
-        className={cn(ACTIVE_ITEM, archived && "opacity-60")}
+        className={cn(ACTIVE_ITEM, "pl-3", archived && "opacity-60")}
       >
         <span className="shrink-0 font-mono text-xs tabular-nums" style={{ color: project.color }}>
           {project.key}

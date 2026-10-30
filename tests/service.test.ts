@@ -15,6 +15,7 @@ import {
   getLinks,
   link,
   listChildren,
+  listProjectTasks,
   listWorklog,
   listTags,
   markSuperseded,
@@ -226,6 +227,25 @@ describe("botnote service", () => {
 
     const list = await recent(S, db, { projectId: p.id, limit: 10 });
     expect(list.length).toBe(1);
+  });
+
+  it("lists every task in a project beyond the recent() cap", async () => {
+    const p = await createProject(S, db, { key: "MANY", name: "Many" });
+    const other = await createProject(S, db, { key: "OTH", name: "Other" });
+    const base = { body: "", tags: [], actorKind: "agent" as const, metadata: {}, idempotencyKey: null };
+    for (let i = 0; i < 105; i++) {
+      await write(S, db, { ...base, kind: "task", projectId: p.id, title: `T${i}`, status: i % 2 ? "done" : "open" });
+    }
+    await write(S, db, { ...base, kind: "note", projectId: p.id, title: "a note" });
+    await write(S, db, { ...base, kind: "task", projectId: other.id, title: "elsewhere", status: "open" });
+    const gone = await write(S, db, { ...base, kind: "task", projectId: p.id, title: "gone", status: "open" });
+    await remove(S, db, gone.id);
+
+    const rows = await listProjectTasks(S, db, p.id);
+    expect(rows).toHaveLength(105);
+    expect(rows.every((r) => r.kind === "task" && r.projectId === p.id)).toBe(true);
+    expect(rows.filter((r) => r.status === "done")).toHaveLength(52);
+    expect(await listProjectTasks(S, db, p.id)).toEqual(rows);
   });
 
   it("moves an entity between projects and to workspace scope", async () => {

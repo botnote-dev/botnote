@@ -604,6 +604,28 @@ export async function recent(
     .limit(input.limit);
 }
 
+export const PROJECT_TASKS_CAP = 5000;
+
+export async function listProjectTasks(
+  scope: Scope,
+  db: Database["db"],
+  projectId: string
+): Promise<Entity[]> {
+  return db
+    .select()
+    .from(entities)
+    .where(
+      and(
+        inScope(scope),
+        eq(entities.projectId, projectId),
+        eq(entities.kind, "task"),
+        isNull(entities.deletedAt)
+      )
+    )
+    .orderBy(desc(entities.createdAt), desc(entities.id))
+    .limit(PROJECT_TASKS_CAP);
+}
+
 export async function link(
   scope: Scope,
   db: Database["db"],

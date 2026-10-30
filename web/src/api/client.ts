@@ -151,6 +151,9 @@ export const api = {
       body: JSON.stringify(input)
     }),
 
+  projectTasks: (projectId: string) =>
+    request<Entity[]>(`/v1/projects/${projectId}/tasks`),
+
   recent: (input: RecentInput = {}) =>
     request<Entity[]>("/v1/recent", { method: "POST", body: JSON.stringify(input) }),
 

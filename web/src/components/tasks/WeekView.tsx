@@ -7,7 +7,8 @@ import type { Entity, Project, VirtualOccurrence } from "../../api/types";
 import { useElementSize } from "../../hooks/useElementSize";
 import { useModals } from "../../state/modals";
 import { ClosedTasksToggle, GhostChips, TaskChip } from "./TaskChip";
-import { dayKey, daysBetween, groupTasksByDay, groupVirtualsByDay, partitionByStatus, projectLookup, viewRange } from "./utils";
+import { sortTasks, type TaskSort } from "./sorting";
+import { dayKey, daysBetween, groupTasksByDay, groupVirtualsByDay, KEEP_ORDER, partitionByStatus, projectLookup, viewRange } from "./utils";
 
 // Below this width a single Mon–Sun row squeezes chips too far, so the week
 // wraps into two rows of four.
@@ -16,10 +17,12 @@ const SINGLE_ROW_MIN_WIDTH = 7 * 160;
 export function WeekView({
   anchor,
   projectIds,
+  sort,
   onOpenDay
 }: {
   anchor: Date;
   projectIds: string[] | null;
+  sort: TaskSort;
   onOpenDay: (day: Date) => void;
 }) {
   const range = viewRange("week", anchor);
@@ -45,7 +48,10 @@ export function WeekView({
   });
   const { data: projects } = useProjects();
   const projectMap = useMemo(() => projectLookup(projects), [projects]);
-  const byDay = useMemo(() => groupTasksByDay(tasksData?.scheduled ?? []), [tasksData]);
+  const byDay = useMemo(
+    () => groupTasksByDay(sortTasks(tasksData?.scheduled ?? [], sort, projectMap)),
+    [tasksData, sort, projectMap]
+  );
   const virtualsByDay = useMemo(
     () => groupVirtualsByDay(tasksData?.virtualOccurrences ?? []),
     [tasksData]
@@ -130,7 +136,7 @@ function DayCell({
 
   // In progress first, then todo; closed tasks fold into one row so the
   // remaining work stays visible.
-  const { open, closed } = partitionByStatus(tasks);
+  const { open, closed } = partitionByStatus(tasks, KEEP_ORDER);
   const totalCount = tasks.length;
   const allClosed = totalCount > 0 && closed.length === totalCount;
 

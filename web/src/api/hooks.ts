@@ -134,6 +134,16 @@ export function useEntityList(
   });
 }
 
+/** Every task in a project. Keyed under "entity-list" so existing invalidations cover it. */
+export function useProjectTasks(projectId: string | undefined, opts: { poll?: boolean } = {}) {
+  return useQuery({
+    queryKey: ["entity-list", projectId, "all-tasks"],
+    queryFn: () => api.projectTasks(projectId!),
+    enabled: Boolean(projectId),
+    refetchInterval: opts.poll === false ? false : POLL_INTERVAL
+  });
+}
+
 export function useSearch(input: SearchInput | null) {
   return useQuery({
     queryKey: ["search", input],
