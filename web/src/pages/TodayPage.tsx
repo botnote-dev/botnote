@@ -5,13 +5,18 @@ import { useProjects, useTasksRange, useWriteEntity } from "../api/hooks";
 import type { Entity, Project } from "../api/types";
 import { ProjectIcon } from "../components/ProjectIcon";
 import { TaskRow } from "../components/tasks/TaskRow";
-import { compareByStatus, isTaskOverdue, projectLookup } from "../components/tasks/utils";
+import { groupTasks, sortTasks, type TaskGroup, type TaskSort } from "../components/tasks/sorting";
+import { isTaskOverdue, projectLookup } from "../components/tasks/utils";
+import { ViewOptionsMenu } from "../components/tasks/ViewOptionsMenu";
+import { usePersistedState } from "../hooks/usePersistedState";
 import { useModals } from "../state/modals";
 
 export function TodayPage() {
   const today = new Date();
   const { data: projects } = useProjects();
   const projectMap = useMemo(() => projectLookup(projects), [projects]);
+  const [sort, setSort] = usePersistedState<TaskSort>("botnote.today.sort", "status");
+  const [group, setGroup] = usePersistedState<TaskGroup>("botnote.today.group", "project");
 
   const todayRange = useMemo(() => {
     const from = new Date(today);
@@ -29,16 +34,28 @@ export function TodayPage() {
   });
 
   const { open } = useModals();
-  const overdue = (data?.overdue ?? []).filter((t) => isTaskOverdue(t, today));
-  const scheduled = (data?.scheduled ?? []).slice().sort(compareByStatus);
+  const overdue = sortTasks(
+    (data?.overdue ?? []).filter((t) => isTaskOverdue(t, today)),
+    sort,
+    projectMap
+  );
+  const scheduled = sortTasks(data?.scheduled ?? [], sort, projectMap);
+  const total = overdue.length + scheduled.length;
+  const done = scheduled.filter((t) => t.status === "done").length;
 
   return (
     <div className="h-full overflow-y-auto scrollbar-thin">
       <div className="max-w-3xl mx-auto px-6 py-6 space-y-6">
-        <header className="flex items-baseline gap-3">
-          <SunHorizonIcon size={18} className="text-kumo-brand" />
-          <h1 className="text-lg font-semibold">Today</h1>
-          <span className="text-xs text-kumo-subtle">{format(today, "EEEE, MMM d")}</span>
+        <header className="space-y-3">
+          <div className="flex items-center gap-3">
+            <SunHorizonIcon size={18} className="text-kumo-brand" />
+            <h1 className="text-lg font-semibold">Today</h1>
+            <span className="text-xs text-kumo-subtle">{format(today, "EEEE, MMM d")}</span>
+            <div className="ml-auto">
+              <ViewOptionsMenu sort={sort} setSort={setSort} group={group} setGroup={setGroup} />
+            </div>
+          </div>
+          {!isLoading && total > 0 && <Progress done={done} total={total} />}
         </header>
 
         {isLoading && <div className="text-sm text-kumo-subtle">Loading…</div>}
@@ -50,6 +67,7 @@ export function TodayPage() {
               count={overdue.length}
               accent="text-kumo-danger"
               tasks={overdue}
+              group={group}
               projectMap={projectMap}
             />
             <Section
@@ -57,6 +75,7 @@ export function TodayPage() {
               count={scheduled.length}
               accent="text-kumo-default"
               tasks={scheduled}
+              group={group}
               projectMap={projectMap}
               emptyAction={
                 <button
@@ -71,6 +90,29 @@ export function TodayPage() {
           </>
         )}
       </div>
+    </div>
+  );
+}
+
+function Progress({ done, total }: { done: number; total: number }) {
+  const pct = Math.round((done / total) * 100);
+  return (
+    <div className="flex items-center gap-3 text-xs">
+      <span className="tabular-nums text-kumo-default">
+        <span className="font-semibold">{done}</span>
+        <span className="text-kumo-subtle"> / {total} done</span>
+      </span>
+      <div
+        className="h-1.5 flex-1 overflow-hidden rounded-full bg-kumo-fill"
+        role="progressbar"
+        aria-valuenow={done}
+        aria-valuemin={0}
+        aria-valuemax={total}
+        aria-label="Tasks done today"
+      >
+        <div className="h-full rounded-full bg-kumo-brand transition-all" style={{ width: `${pct}%` }} />
+      </div>
+      <span className="tabular-nums text-kumo-subtle">{pct}%</span>
     </div>
   );
 }
@@ -119,6 +161,7 @@ function Section({
   count,
   accent,
   tasks,
+  group,
   projectMap,
   emptyAction
 }: {
@@ -126,17 +169,12 @@ function Section({
   count: number;
   accent: string;
   tasks: Entity[];
+  group: TaskGroup;
   projectMap: Map<string, Project>;
   emptyAction?: React.ReactNode;
 }) {
   if (tasks.length === 0 && !emptyAction) return null;
-  // Group by project.
-  const groups = new Map<string | null, Entity[]>();
-  for (const t of tasks) {
-    const k = t.projectId ?? null;
-    if (!groups.has(k)) groups.set(k, []);
-    groups.get(k)!.push(t);
-  }
+  const buckets = groupTasks(tasks, group, projectMap);
 
   return (
     <section className="space-y-1.5">
@@ -148,30 +186,36 @@ function Section({
         <div className="text-xs text-kumo-subtle py-1">{emptyAction ?? "Nothing here."}</div>
       ) : (
         <div className="border border-kumo-line rounded-md overflow-hidden bg-kumo-base">
-          {Array.from(groups.entries()).map(([projectId, items]) => {
-            const project = projectId ? projectMap.get(projectId) : undefined;
-            return (
-              <div key={projectId ?? "_none"}>
+          {buckets.map((bucket) => (
+            <div key={bucket.key}>
+              {group !== "none" && (
                 <div className="px-3 py-1 border-b border-kumo-hairline bg-kumo-tint/40 flex items-center gap-1.5 text-xxs">
-                  {project ? (
+                  {group === "project" && bucket.project ? (
                     <>
-                      <ProjectIcon color={project.color} icon={project.icon} size={10} />
-                      <span className="font-mono tabular-nums" style={{ color: project.color }}>
-                        {project.key}
+                      <ProjectIcon color={bucket.project.color} icon={bucket.project.icon} size={10} />
+                      <span className="font-mono tabular-nums" style={{ color: bucket.project.color }}>
+                        {bucket.project.key}
                       </span>
-                      <span className="text-kumo-subtle truncate">{project.name}</span>
+                      <span className="text-kumo-subtle truncate">{bucket.project.name}</span>
                     </>
                   ) : (
-                    <span className="text-kumo-placeholder">no project</span>
+                    <span className={group === "project" ? "text-kumo-placeholder" : "text-kumo-subtle"}>
+                      {bucket.label}
+                    </span>
                   )}
-                  <span className="text-kumo-placeholder ml-auto tabular-nums">{items.length}</span>
+                  <span className="text-kumo-placeholder ml-auto tabular-nums">{bucket.tasks.length}</span>
                 </div>
-                {items.map((t) => (
-                  <TaskRow key={t.id} task={t} project={project} />
-                ))}
-              </div>
-            );
-          })}
+              )}
+              {bucket.tasks.map((t) => (
+                <TaskRow
+                  key={t.id}
+                  task={t}
+                  project={t.projectId ? projectMap.get(t.projectId) : undefined}
+                  showProject={group !== "project"}
+                />
+              ))}
+            </div>
+          ))}
         </div>
       )}
     </section>

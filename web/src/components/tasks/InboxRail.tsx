@@ -5,14 +5,17 @@ import { useMemo } from "react";
 import { useProjects, useTasksRange } from "../../api/hooks";
 import type { Entity, Project } from "../../api/types";
 import { TaskRow } from "./TaskRow";
+import { sortTasks, type TaskSort } from "./sorting";
 import { projectLookup } from "./utils";
 
 export function InboxRail({
   projectIds,
+  sort,
   collapsed,
   onToggle
 }: {
   projectIds: string[] | null;
+  sort: TaskSort;
   collapsed: boolean;
   onToggle: () => void;
 }) {
@@ -36,7 +39,7 @@ export function InboxRail({
     }
     const entries: { project: Project | undefined; tasks: Entity[] }[] = [];
     for (const [pid, tasks] of byProject) {
-      entries.push({ project: pid ? projectMap.get(pid) : undefined, tasks });
+      entries.push({ project: pid ? projectMap.get(pid) : undefined, tasks: sortTasks(tasks, sort, projectMap) });
     }
     entries.sort((a, b) => {
       if (!a.project) return 1;
@@ -44,7 +47,7 @@ export function InboxRail({
       return a.project.key.localeCompare(b.project.key);
     });
     return entries;
-  }, [inboxTasks, projectMap]);
+  }, [inboxTasks, projectMap, sort]);
 
   if (collapsed) {
     return (

@@ -5,7 +5,9 @@ import { CaretLeftIcon, CaretRightIcon, FunnelIcon, PlusIcon } from "@phosphor-i
 import { useProjects } from "../../api/hooks";
 import type { Project } from "../../api/types";
 import { useModals } from "../../state/modals";
+import type { TaskSort } from "./sorting";
 import { moveAnchor, rangeLabel, type CalendarView } from "./utils";
+import { ViewOptionsMenu } from "./ViewOptionsMenu";
 
 const VIEW_TABS = [
   { value: "day", label: "Day" },
@@ -19,7 +21,9 @@ export function TasksHeader({
   anchor,
   setAnchor,
   projectIds,
-  setProjectIds
+  setProjectIds,
+  sort,
+  setSort
 }: {
   view: CalendarView;
   setView: (v: CalendarView) => void;
@@ -27,6 +31,8 @@ export function TasksHeader({
   setAnchor: (d: Date) => void;
   projectIds: string[] | null;
   setProjectIds: (ids: string[] | null) => void;
+  sort: TaskSort;
+  setSort: (s: TaskSort) => void;
 }) {
   const { data: projects } = useProjects();
   const { open } = useModals();
@@ -79,6 +85,7 @@ export function TasksHeader({
       </div>
 
       <div className="flex shrink-0 items-center gap-2">
+        <ViewOptionsMenu sort={sort} setSort={setSort} />
         <ProjectFilter
           projects={projects ?? []}
           projectIds={projectIds}

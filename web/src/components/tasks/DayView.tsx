@@ -6,14 +6,17 @@ import { useProjects, useTasksRange } from "../../api/hooks";
 import type { Entity } from "../../api/types";
 import { useModals } from "../../state/modals";
 import { TaskRow } from "./TaskRow";
-import { compareByStatus, isTaskOverdue, projectLookup, viewRange } from "./utils";
+import { sortTasks, type TaskSort } from "./sorting";
+import { isTaskOverdue, projectLookup, viewRange } from "./utils";
 
 export function DayView({
   anchor,
-  projectIds
+  projectIds,
+  sort
 }: {
   anchor: Date;
   projectIds: string[] | null;
+  sort: TaskSort;
 }) {
   const range = viewRange("day", anchor);
   const { data: tasksData } = useTasksRange({
@@ -29,10 +32,12 @@ export function DayView({
   const projectMap = useMemo(() => projectLookup(projects), [projects]);
   const { open } = useModals();
 
-  const overdue = (tasksData?.overdue ?? []).filter((t) => isTaskOverdue(t, anchor));
-  // Same in_progress -> open -> done order as the week/month cells, so the
-  // day's Today section reads consistently.
-  const today = (tasksData?.scheduled ?? []).slice().sort(compareByStatus);
+  const overdue = sortTasks(
+    (tasksData?.overdue ?? []).filter((t) => isTaskOverdue(t, anchor)),
+    sort,
+    projectMap
+  );
+  const today = sortTasks(tasksData?.scheduled ?? [], sort, projectMap);
   const isCurrentDay = isToday(anchor);
 
   return (

@@ -4,6 +4,7 @@ import { InboxRail } from "../components/tasks/InboxRail";
 import { MonthView } from "../components/tasks/MonthView";
 import { TasksHeader } from "../components/tasks/TasksHeader";
 import { WeekView } from "../components/tasks/WeekView";
+import type { TaskSort } from "../components/tasks/sorting";
 import type { CalendarView } from "../components/tasks/utils";
 import { useIsMobile } from "../hooks/useIsMobile";
 import { usePersistedState } from "../hooks/usePersistedState";
@@ -25,6 +26,7 @@ export function TasksPage() {
     "botnote.tasks.inboxCollapsed",
     {}
   );
+  const [sort, setSort] = usePersistedState<TaskSort>("botnote.tasks.sort", "status");
   const [mobileRailCollapsed, setMobileRailCollapsed] = useState(true);
 
   // Multi-column calendars don't fit narrow screens; force the day view there.
@@ -50,15 +52,18 @@ export function TasksPage() {
         setAnchor={setAnchor}
         projectIds={projectIds}
         setProjectIds={setProjectIds}
+        sort={sort}
+        setSort={setSort}
       />
       <div className="flex-1 min-h-0 flex">
         <div className="flex-1 min-w-0 overflow-hidden bg-kumo-canvas">
-          {effectiveView === "day" && <DayView anchor={anchor} projectIds={projectIds} />}
-          {effectiveView === "week" && <WeekView anchor={anchor} projectIds={projectIds} onOpenDay={openDay} />}
-          {effectiveView === "month" && <MonthView anchor={anchor} projectIds={projectIds} onOpenDay={openDay} />}
+          {effectiveView === "day" && <DayView anchor={anchor} projectIds={projectIds} sort={sort} />}
+          {effectiveView === "week" && <WeekView anchor={anchor} projectIds={projectIds} sort={sort} onOpenDay={openDay} />}
+          {effectiveView === "month" && <MonthView anchor={anchor} projectIds={projectIds} sort={sort} onOpenDay={openDay} />}
         </div>
         <InboxRail
           projectIds={projectIds}
+          sort={sort}
           collapsed={inboxCollapsed}
           onToggle={toggleInbox}
         />

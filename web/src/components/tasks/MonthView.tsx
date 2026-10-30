@@ -7,12 +7,14 @@ import type { Entity, Project, VirtualOccurrence } from "../../api/types";
 import { useElementSize } from "../../hooks/useElementSize";
 import { useModals } from "../../state/modals";
 import { RecurrenceIcon } from "./icons";
+import { sortTasks, type TaskSort } from "./sorting";
 import { TaskChip } from "./TaskChip";
 import {
   dayKey,
   daysBetween,
   groupTasksByDay,
   groupVirtualsByDay,
+  KEEP_ORDER,
   partitionByStatus,
   projectLookup,
   viewRange,
@@ -28,10 +30,12 @@ const CHIP_GAP = 2;
 export function MonthView({
   anchor,
   projectIds,
+  sort,
   onOpenDay
 }: {
   anchor: Date;
   projectIds: string[] | null;
+  sort: TaskSort;
   onOpenDay: (day: Date) => void;
 }) {
   const range = viewRange("month", anchor);
@@ -47,7 +51,10 @@ export function MonthView({
   });
   const { data: projects } = useProjects();
   const projectMap = useMemo(() => projectLookup(projects), [projects]);
-  const byDay = useMemo(() => groupTasksByDay(tasksData?.scheduled ?? []), [tasksData]);
+  const byDay = useMemo(
+    () => groupTasksByDay(sortTasks(tasksData?.scheduled ?? [], sort, projectMap)),
+    [tasksData, sort, projectMap]
+  );
   const virtualsByDay = useMemo(
     () => groupVirtualsByDay(tasksData?.virtualOccurrences ?? []),
     [tasksData]
@@ -110,7 +117,7 @@ function DayCell({
 
   // Closed tasks only count toward the progress bar; the chips are the work
   // still left on that day.
-  const { open, closed } = partitionByStatus(tasks);
+  const { open, closed } = partitionByStatus(tasks, KEEP_ORDER);
   const inProgress = open.filter((t) => t.status === "in_progress").length;
   const slots = Math.floor((height + CHIP_GAP) / (CHIP_ROW + CHIP_GAP));
   const shown = visibleChipCount(open.length, slots);

@@ -4,7 +4,7 @@ import { Tabs } from "@cloudflare/kumo/components/tabs";
 import { BrainIcon, KanbanIcon, RobotIcon, SlidersHorizontalIcon } from "@phosphor-icons/react";
 import { useMemo } from "react";
 import { useParams, useSearchParams } from "react-router-dom";
-import { useEntityList, useProjectByKey } from "../api/hooks";
+import { useProjectByKey, useProjectTasks } from "../api/hooks";
 import { KanbanBoard } from "../components/project/KanbanBoard";
 import { NotesList } from "../components/project/NotesList";
 import { ProjectIcon } from "../components/ProjectIcon";
@@ -19,7 +19,7 @@ export function ProjectPage() {
   const tab = (search.get("tab") as Tab) || "tasks";
 
   const { data: project } = useProjectByKey(key);
-  const { data: tasks } = useEntityList(project?.id, ["task"], { poll: true });
+  const { data: tasks } = useProjectTasks(project?.id);
   const { open: openModal } = useModals();
 
   const counts = useMemo(() => {

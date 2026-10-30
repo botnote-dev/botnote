@@ -5,7 +5,7 @@ import { Tabs } from "@cloudflare/kumo/components/tabs";
 import { useState } from "react";
 import {
   useConfigureRecurrence,
-  useEntityList,
+  useProjectTasks,
   useProjects,
   useWriteEntity
 } from "../../api/hooks";
@@ -57,9 +57,9 @@ export function QuickCreateModal({
   // A new task only gets a parent picker when it was opened as a sub-task, so the
   // plain create flow stays short.
   const showParentPicker = isNote || Boolean(initialParentId);
-  const { data: projectTasks } = useEntityList(
+  const { data: projectTasks } = useProjectTasks(
     showParentPicker && projectId ? projectId : undefined,
-    ["task"]
+    { poll: false }
   );
 
   const valid =

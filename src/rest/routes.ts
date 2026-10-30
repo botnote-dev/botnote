@@ -12,6 +12,7 @@ import {
   getLinks,
   link,
   listChildren,
+  listProjectTasks,
   listWorklog,
   listRelated,
   listTags,
@@ -361,6 +362,22 @@ export async function registerRoutes(
       const { id } = IdParams.parse(req.params);
       const body = UpdateProjectInput.parse(req.body);
       return updateProject(req.scope, ctx.db, id, body);
+    }
+  );
+
+  app.get(
+    "/v1/projects/:id/tasks",
+    {
+      schema: {
+        tags: ["projects"],
+        summary: "List every task in a project (all statuses, newest first)",
+        params: IdParams
+      }
+    },
+    async (req) => {
+      const { id } = IdParams.parse(req.params);
+      const rows = await listProjectTasks(req.scope, ctx.db, id);
+      return serializeEntities(await attachHierarchy(req.scope, ctx.db, rows));
     }
   );
 
