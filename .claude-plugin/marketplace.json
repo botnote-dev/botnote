@@ -6,7 +6,7 @@
   },
   "metadata": {
     "description": "botnote plugin marketplace — capture + recall for AI agents.",
-    "version": "0.2.19"
+    "version": "0.2.20"
   },
   "plugins": [
     {
@@ -21,7 +21,7 @@
         "mcp",
         "agent"
       ],
-      "version": "0.2.19"
+      "version": "0.2.20"
     }
   ]
 }
