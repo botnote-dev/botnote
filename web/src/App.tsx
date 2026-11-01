@@ -8,6 +8,7 @@ import { DashboardPage } from "./pages/DashboardPage";
 import { EntityDetailPage } from "./pages/EntityDetailPage";
 import { InboxPage } from "./pages/InboxPage";
 import { LoginPage } from "./pages/LoginPage";
+import { OkrPage } from "./pages/OkrPage";
 import { ProjectPage } from "./pages/ProjectPage";
 import { SearchPage } from "./pages/SearchPage";
 import { SettingsPage } from "./pages/SettingsPage";
@@ -31,6 +32,7 @@ export default function App() {
               <Route path="/today" element={<TodayPage />} />
               <Route path="/inbox" element={<InboxPage />} />
               <Route path="/dashboard" element={<DashboardPage />} />
+              <Route path="/okr" element={<OkrPage />} />
               <Route path="/trash" element={<TrashPage />} />
               <Route path="/settings" element={<SettingsPage />} />
               <Route path="/p/:key" element={<ProjectPage />} />

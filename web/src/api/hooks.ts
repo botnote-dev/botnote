@@ -3,6 +3,7 @@ import { api } from "./client";
 import type {
   CreateProjectInput,
   CreateWorklogEntryInput,
+  Entity,
   EntityKind,
   ListFeedbackInput,
   RecentInput,
@@ -427,6 +428,42 @@ export function useRevokeToken() {
     onSuccess: (_data, id) => {
       qc.setQueryData<Token[]>(["tokens"], (rows) => rows?.filter((t) => t.id !== id) ?? rows);
       qc.invalidateQueries({ queryKey: ["tokens"], refetchType: "active" });
+    }
+  });
+}
+
+export function useOkrCurrent() {
+  return useQuery({ queryKey: ["okr-current"], queryFn: () => api.okrCurrent(), staleTime: 60_000 });
+}
+
+export function useOkr(quarter: string | null) {
+  return useQuery({
+    queryKey: ["okr", quarter],
+    queryFn: () => api.getOkr(quarter!),
+    enabled: Boolean(quarter),
+    refetchInterval: POLL_INTERVAL
+  });
+}
+
+export function useOkrReviews(quarter: string | null) {
+  return useQuery({
+    queryKey: ["okr-reviews", quarter],
+    queryFn: () => api.listReviews(quarter!),
+    enabled: Boolean(quarter),
+    refetchInterval: POLL_INTERVAL
+  });
+}
+
+/** Wrap an OKR write so every OKR view and brief refetches afterwards. */
+export function useOkrMutation<TArgs>(fn: (args: TArgs) => Promise<Entity>) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: fn,
+    onSuccess: (entity) => {
+      qc.invalidateQueries({ queryKey: ["okr"] });
+      qc.invalidateQueries({ queryKey: ["okr-reviews"] });
+      qc.invalidateQueries({ queryKey: ["worklog", entity.id] });
+      qc.invalidateQueries({ queryKey: ["opening-brief"] });
     }
   });
 }

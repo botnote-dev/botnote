@@ -5,6 +5,7 @@ import {
   BrainIcon,
   ClockCounterClockwiseIcon,
   MegaphoneIcon,
+  TargetIcon,
   type Icon
 } from "@phosphor-icons/react";
 import { useEffect, useMemo, useState } from "react";
@@ -19,7 +20,10 @@ const KIND_META: Record<EntityKind, { label: string; icon: Icon | null }> = {
   task: { label: "task", icon: null },
   note: { label: "memory", icon: BrainIcon },
   worklog: { label: "worklog", icon: ClockCounterClockwiseIcon },
-  feedback: { label: "feedback", icon: MegaphoneIcon }
+  feedback: { label: "feedback", icon: MegaphoneIcon },
+  objective: { label: "objective", icon: TargetIcon },
+  key_result: { label: "key result", icon: TargetIcon },
+  okr_review: { label: "review", icon: TargetIcon }
 };
 
 export function SearchModal() {

@@ -10,6 +10,7 @@ import {
   SquaresFourIcon,
   SunHorizonIcon,
   TrashIcon,
+  TargetIcon,
   TrayIcon,
   type Icon
 } from "@phosphor-icons/react";
@@ -109,6 +110,13 @@ export function ProjectsSidebar() {
               label="Inbox"
               shortcut="g i"
               active={isActive("/inbox")}
+            />
+            <NavItem
+              to="/okr"
+              icon={TargetIcon}
+              label="OKR"
+              shortcut="g o"
+              active={isActive("/okr")}
             />
             <NavItem
               to="/dashboard"
