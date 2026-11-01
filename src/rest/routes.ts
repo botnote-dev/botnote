@@ -38,6 +38,19 @@ import { findSimilar, search } from "../service/search.js";
 import type { Scope } from "../service/scope.js";
 import { listFeedback, submitFeedback } from "../service/feedback.js";
 import {
+  createKeyResult,
+  createObjective,
+  currentPeriods,
+  getOkr,
+  getReview,
+  listReviews,
+  recordReview,
+  scoreKeyResult,
+  updateKeyResult,
+  updateObjective,
+  type OkrQuarterView
+} from "../service/okr.js";
+import {
   embeddingCoverage,
   getEmbeddingSettings,
   updateEmbeddingSettings
@@ -65,20 +78,29 @@ import { exportWorkspace, importWorkspace } from "../service/transfer.js";
 import { createToken, listTokens, revokeToken, tokenLabels } from "../service/tokens.js";
 import {
   CreateFeedbackInput,
+  CreateKeyResultInput,
   CreateNoteInput,
+  CreateObjectiveInput,
   CreateProjectInput,
   CreateTaskInput,
   CreateWorklogEntryInput,
   CreateTokenInput,
   EmbeddingBackfillInput,
   GetLinksInput,
+  GetOkrInput,
+  IsoWeekString,
   LinkInput,
   ListFeedbackInput,
   ListProjectsInput,
+  ListReviewsInput,
   ListTagsInput,
+  MonthString,
+  OkrReviewTypeEnum,
   OpeningBriefInput,
   RecentInput,
+  RecordReviewInput,
   RecurrenceInput,
+  ScoreKeyResultInput,
   SearchInput,
   SkipOccurrenceInput,
   SplitRecurrenceInput,
@@ -86,6 +108,8 @@ import {
   TasksRangeInput,
   UpdateEmbeddingSettingsInput,
   UpdateInput,
+  UpdateKeyResultInput,
+  UpdateObjectiveInput,
   UpdateProjectInput,
   UpdateRecurrenceInput,
   UpdateWorkspaceSettingsInput,
@@ -116,6 +140,16 @@ const KeySeqParams = z.object({
   key: z.string().regex(/^[A-Z][A-Z0-9_]*$/),
   seq: z.coerce.number().int().positive()
 });
+const OkrQuery = z.object({
+  quarter: GetOkrInput.shape.quarter,
+  projectId: Uuid.optional(),
+  includeClosed: BooleanQuery.default(true)
+});
+const ReviewsQuery = z.object({
+  quarter: ListReviewsInput.shape.quarter,
+  type: OkrReviewTypeEnum.optional(),
+  limit: z.coerce.number().int().min(1).max(100).default(20)
+});
 const OpeningBriefBody = OpeningBriefInput.omit({ projectId: true }).optional();
 const LinkBody = LinkInput.omit({ fromId: true });
 
@@ -132,6 +166,16 @@ function serializeEntity(e: Entity) {
 
 function serializeEntities(rows: Entity[]) {
   return rows.map(serializeEntity);
+}
+
+function serializeOkr(view: OkrQuarterView) {
+  return {
+    ...view,
+    objectives: view.objectives.map(({ keyResults, ...objective }) => ({
+      ...serializeEntity(objective),
+      keyResults: keyResults.map((kr) => serializeEntity(kr))
+    }))
+  };
 }
 
 function publicToken(t: Token) {
@@ -837,6 +881,171 @@ export async function registerRoutes(
       }
     );
   }
+
+  app.get(
+    "/v1/okr",
+    {
+      schema: {
+        tags: ["okr"],
+        summary: "Objectives and key results for one quarter, sorted by tier",
+        querystring: OkrQuery
+      }
+    },
+    async (req) => {
+      const input = GetOkrInput.parse(OkrQuery.parse(req.query));
+      return serializeOkr(await getOkr(req.scope, ctx.db, input));
+    }
+  );
+
+  app.get(
+    "/v1/okr/current",
+    {
+      schema: {
+        tags: ["okr"],
+        summary: "Current quarter, month and ISO week in the workspace timezone"
+      }
+    },
+    async (req) => currentPeriods(req.scope, ctx.db)
+  );
+
+  const enqueueEmbedding = (entity: Entity) => {
+    if (ctx.embedding.isEnabled()) {
+      ctx.embedding.enqueue(entity.id, `${entity.title ?? ""}\n${entity.body}`);
+    }
+  };
+
+  app.post(
+    "/v1/okr/objectives",
+    {
+      schema: { tags: ["okr"], summary: "Create a quarterly objective for a project", body: CreateObjectiveInput }
+    },
+    async (req) => {
+      const body = CreateObjectiveInput.parse(req.body);
+      const entity = await createObjective(req.scope, ctx.db, body, { actorTokenId: req.actorTokenId });
+      enqueueEmbedding(entity);
+      return serializeEntity(entity);
+    }
+  );
+
+  app.patch(
+    "/v1/okr/objectives/:id",
+    {
+      schema: {
+        tags: ["okr"],
+        summary: "Update an objective; changes are kept in its change log",
+        params: EntityIdParams,
+        body: UpdateObjectiveInput
+      }
+    },
+    async (req) => {
+      const { id } = EntityIdParams.parse(req.params);
+      const body = UpdateObjectiveInput.parse(req.body);
+      const entity = await updateObjective(req.scope, ctx.db, id, body, { actorTokenId: req.actorTokenId });
+      if (body.title !== undefined || body.body !== undefined) enqueueEmbedding(entity);
+      return serializeEntity(entity);
+    }
+  );
+
+  app.post(
+    "/v1/okr/key-results",
+    {
+      schema: { tags: ["okr"], summary: "Create a key result under an objective", body: CreateKeyResultInput }
+    },
+    async (req) => {
+      const body = CreateKeyResultInput.parse(req.body);
+      const entity = await createKeyResult(req.scope, ctx.db, body, { actorTokenId: req.actorTokenId });
+      enqueueEmbedding(entity);
+      return serializeEntity(entity);
+    }
+  );
+
+  app.patch(
+    "/v1/okr/key-results/:id",
+    {
+      schema: {
+        tags: ["okr"],
+        summary: "Update a key result; plan changes require a reason",
+        params: EntityIdParams,
+        body: UpdateKeyResultInput
+      }
+    },
+    async (req) => {
+      const { id } = EntityIdParams.parse(req.params);
+      const body = UpdateKeyResultInput.parse(req.body);
+      const entity = await updateKeyResult(req.scope, ctx.db, id, body, { actorTokenId: req.actorTokenId });
+      if (body.title !== undefined || body.body !== undefined) enqueueEmbedding(entity);
+      return serializeEntity(entity);
+    }
+  );
+
+  app.post(
+    "/v1/okr/key-results/:id/score",
+    {
+      schema: {
+        tags: ["okr"],
+        summary: "Score a key result from 0 to 1 (null clears the score)",
+        params: EntityIdParams,
+        body: ScoreKeyResultInput
+      }
+    },
+    async (req) => {
+      const { id } = EntityIdParams.parse(req.params);
+      const body = ScoreKeyResultInput.parse(req.body);
+      return serializeEntity(
+        await scoreKeyResult(req.scope, ctx.db, id, body, { actorTokenId: req.actorTokenId })
+      );
+    }
+  );
+
+  app.post(
+    "/v1/okr/reviews",
+    {
+      schema: {
+        tags: ["okr"],
+        summary: "Record a weekly review (with Top 5) or a monthly check; replaces the one for the same period",
+        body: RecordReviewInput
+      }
+    },
+    async (req) => {
+      const body = RecordReviewInput.parse(req.body);
+      const entity = await recordReview(req.scope, ctx.db, body, { actorTokenId: req.actorTokenId });
+      enqueueEmbedding(entity);
+      return serializeEntity(entity);
+    }
+  );
+
+  app.get(
+    "/v1/okr/reviews",
+    {
+      schema: {
+        tags: ["okr"],
+        summary: "List reviews, newest period first",
+        querystring: ReviewsQuery
+      }
+    },
+    async (req) => {
+      const input = ListReviewsInput.parse(ReviewsQuery.parse(req.query));
+      return serializeEntities(await listReviews(req.scope, ctx.db, input));
+    }
+  );
+
+  const ReviewParams = z.object({
+    type: OkrReviewTypeEnum,
+    period: z.union([IsoWeekString, MonthString])
+  });
+
+  app.get(
+    "/v1/okr/reviews/:type/:period",
+    {
+      schema: { tags: ["okr"], summary: "Get the review for one week or month", params: ReviewParams }
+    },
+    async (req, reply) => {
+      const { type, period } = ReviewParams.parse(req.params);
+      const review = await getReview(req.scope, ctx.db, type, period);
+      if (!review) return reply.code(404).send({ message: `no ${type} review for ${period}` });
+      return serializeEntity(review);
+    }
+  );
 
   app.post(
     "/v1/feedback",

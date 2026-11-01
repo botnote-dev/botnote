@@ -5,6 +5,7 @@ import {
   BotnoteHttpError,
   type EntityDTO,
   type LinkKind,
+  type OkrQuarterDTO,
   type VirtualOccurrenceDTO,
   serializeEntity
 } from "./http-client.js";
@@ -18,7 +19,15 @@ export interface McpServerContext {
 
 // Inline kind constants so the MCP package can be packaged without pulling
 // drizzle / the db schema module at runtime.
-const ENTITY_KINDS = ["task", "note", "worklog", "feedback"] as const;
+const ENTITY_KINDS = [
+  "task",
+  "note",
+  "worklog",
+  "feedback",
+  "objective",
+  "key_result",
+  "okr_review"
+] as const;
 const FEEDBACK_CATEGORIES = ["bug", "feature", "friction", "idea"] as const;
 const ACTOR_KINDS = ["human", "agent", "system"] as const;
 const TASK_STATUSES = [
@@ -120,6 +129,9 @@ function entityRefLabel(e: EntityDTO, projectKey: string | null): string {
 function summarizeEntity(e: EntityDTO, projectKey: string | null): string {
   const tagPart = e.tags.length ? ` [${e.tags.join(", ")}]` : "";
   const base = `${entityRefLabel(e, projectKey)} · ${displayTitle(e)}${tagPart}`;
+  if (e.kind === "objective" || e.kind === "key_result" || e.kind === "okr_review") {
+    return `${base} (${e.kind.replace("_", " ")}, ${e.status})`;
+  }
   if (e.kind !== "task") return `${base} (note)`;
   // Compact task suffix: status, optional priority, and due/completedAt date.
   const parts: string[] = [e.status];
@@ -196,6 +208,64 @@ const REMAINING_WORK_PATTERN =
 
 export function mentionsRemainingWork(body: string): boolean {
   return REMAINING_WORK_PATTERN.test(body);
+}
+
+const QUARTER_RE = /^\d{4}Q[1-4]$/;
+const MONTH_RE = /^\d{4}-(0[1-9]|1[0-2])$/;
+const ProjectRef = z
+  .string()
+  .min(1)
+  .max(40)
+  .describe("Project UUID or project key such as BOT.");
+const OKR_UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+function formatScore(score: number | null): string {
+  return score === null ? "unscored" : `score ${score}`;
+}
+
+/** Markdown view of one quarter's OKR, tier by tier. */
+export function formatOkr(view: OkrQuarterDTO): string {
+  const lines = [`# OKR ${view.quarter} (${view.months.join(" · ")})`];
+  if (!view.objectives.length) {
+    lines.push("", "No objectives for this quarter yet.");
+    return lines.join("\n");
+  }
+  for (const o of view.objectives) {
+    const project = o.project ? `${o.project.key} ${o.project.name}` : "no project";
+    const ref = o.key ?? `objective/${o.id.slice(0, 8)}`;
+    lines.push("", `## ${o.tier} · ${project} — ${o.title ?? "(untitled)"} [${ref}] (${o.status})`);
+    if (o.body.trim()) lines.push(o.body.trim());
+    if (!o.keyResults.length) {
+      lines.push("- (no key results)");
+      continue;
+    }
+    for (const kr of o.keyResults) {
+      const krRef = kr.key ?? `key_result/${kr.id.slice(0, 8)}`;
+      const due = kr.dueAt ? ` · due ${kr.dueAt.slice(0, 10)}` : "";
+      lines.push(
+        `- ${kr.month} · [${krRef}] ${kr.title ?? "(untitled)"}${due} · ${formatScore(kr.score)} · ${kr.status}`
+      );
+      if (kr.body.trim()) {
+        lines.push(...kr.body.trim().split("\n").map((l) => `  ${l}`));
+      }
+    }
+  }
+  return lines.join("\n");
+}
+
+function formatReview(e: EntityDTO): string {
+  const meta = e.metadata as { top5?: Array<{ title: string; refIds?: string[] }> };
+  const lines = [`## ${e.title ?? "Review"} (review/${e.id.slice(0, 8)})`];
+  const top5 = meta.top5 ?? [];
+  if (top5.length) {
+    lines.push("Top 5:");
+    top5.forEach((t, i) => {
+      const refs = t.refIds?.length ? ` (${t.refIds.map((r) => r.slice(0, 8)).join(", ")})` : "";
+      lines.push(`${i + 1}. ${t.title}${refs}`);
+    });
+  }
+  if (e.body.trim()) lines.push("", e.body.trim());
+  return lines.join("\n");
 }
 
 const ProjectKey = z
@@ -1590,6 +1660,308 @@ export function buildMcpServer(ctx: McpServerContext): McpServer {
         ...projectLines
       ].join("\n");
       return { content: [{ type: "text", text }] };
+    }
+  );
+
+  // ----- OKR -----
+
+  async function resolveProjectRef(ref: string): Promise<string> {
+    if (OKR_UUID_RE.test(ref)) return ref;
+    return (await c.getProjectByKey(ref.trim().toUpperCase())).id;
+  }
+
+  function defined(fields: Record<string, unknown>): Record<string, unknown> {
+    return Object.fromEntries(Object.entries(fields).filter(([, v]) => v !== undefined));
+  }
+
+  server.registerTool(
+    "get_okr",
+    {
+      title: "Get OKR",
+      description:
+        "Read one quarter's objectives and key results, sorted by tier (P0 first, then Side tiers). Defaults to the current quarter; pass project to narrow to one project.",
+      annotations: {
+        readOnlyHint: true,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: false
+      },
+      inputSchema: {
+        quarter: z.string().regex(QUARTER_RE).optional().describe("Quarter such as 2026Q4."),
+        project: ProjectRef.optional(),
+        includeClosed: z.boolean().default(true).describe("Include done and rejected objectives and key results.")
+      }
+    },
+    async ({ quarter, project, includeClosed }) => {
+      try {
+        const projectId = project ? await resolveProjectRef(project) : undefined;
+        const view = await c.getOkr({ quarter, projectId, includeClosed });
+        return { content: [{ type: "text", text: formatOkr(view) }] };
+      } catch (err: unknown) {
+        return formatToolError(err);
+      }
+    }
+  );
+
+  server.registerTool(
+    "upsert_objective",
+    {
+      title: "Create or Update Objective",
+      description:
+        "Create a quarterly objective for a project (omit id), or update one (pass id). Objectives stay fixed for the quarter, so give a reason when changing one.",
+      annotations: {
+        readOnlyHint: false,
+        destructiveHint: true,
+        idempotentHint: true,
+        openWorldHint: false
+      },
+      inputSchema: {
+        id: EntityRef.optional().describe("Objective to update. Omit to create."),
+        project: ProjectRef.optional().describe("Required on create: project UUID or key such as BOT."),
+        quarter: z.string().regex(QUARTER_RE).optional().describe("Create only. Defaults to the current quarter."),
+        title: z.string().min(1).max(500).optional(),
+        body: z.string().optional(),
+        tier: z.string().min(1).max(40).optional().describe("Tier label such as P0, P3 or Side 1. Required on create."),
+        tierRank: z.number().int().min(0).max(999).nullable().optional().describe("Override sort rank; lower ranks first. Null re-derives it from the tier."),
+        ownerId: z.string().uuid().nullable().optional(),
+        status: z.enum(TASK_STATUSES).optional().describe("Update only."),
+        reason: z.string().min(1).max(2000).optional().describe("Update only: why it changed. Kept in the change log."),
+        actorKind: z.enum(ACTOR_KINDS).default("agent"),
+        idempotencyKey: z.string().min(1).max(200).optional()
+      }
+    },
+    async (input) => {
+      try {
+        if (input.id) {
+          const id = await resolveEntityRef(c, input.id);
+          const updated = await c.updateObjective(
+            id,
+            defined({
+              title: input.title,
+              body: input.body,
+              tier: input.tier,
+              tierRank: input.tierRank,
+              ownerId: input.ownerId,
+              status: input.status,
+              reason: input.reason,
+              actorKind: input.actorKind
+            })
+          );
+          return { content: [{ type: "text", text: `updated ${await summarize(updated)}` }] };
+        }
+        if (!input.project || !input.title || !input.tier) {
+          return {
+            isError: true,
+            content: [{ type: "text", text: "creating an objective needs project, title and tier" }]
+          };
+        }
+        const projectId = await resolveProjectRef(input.project);
+        const quarter = input.quarter ?? (await c.currentOkrPeriods()).quarter;
+        const created = await c.createObjective(
+          defined({
+            projectId,
+            quarter,
+            title: input.title,
+            body: input.body,
+            tier: input.tier,
+            tierRank: input.tierRank,
+            ownerId: input.ownerId,
+            actorKind: input.actorKind,
+            idempotencyKey: input.idempotencyKey
+          })
+        );
+        return {
+          content: [{ type: "text", text: `created ${await summarize(created)} for ${quarter}\nid: ${created.id}` }]
+        };
+      } catch (err: unknown) {
+        return formatToolError(err);
+      }
+    }
+  );
+
+  server.registerTool(
+    "upsert_key_result",
+    {
+      title: "Create or Update Key Result",
+      description:
+        "Create a key result under an objective (omit id, pass objectiveId), or update one (pass id). Changing the title, body, month or due date requires a reason: new information, not a new idea.",
+      annotations: {
+        readOnlyHint: false,
+        destructiveHint: true,
+        idempotentHint: true,
+        openWorldHint: false
+      },
+      inputSchema: {
+        id: EntityRef.optional().describe("Key result to update. Omit to create."),
+        objectiveId: EntityRef.optional().describe("Required on create: the parent objective."),
+        title: z.string().min(1).max(500).optional(),
+        body: z.string().optional(),
+        month: z.string().regex(MONTH_RE).optional().describe("Month such as 2026-11, inside the objective's quarter. Defaults to the current month on create."),
+        dueAt: z.string().datetime().nullable().optional().describe("ISO datetime; date-only intents use noon UTC."),
+        status: z.enum(TASK_STATUSES).optional().describe("Update only."),
+        score: z.number().min(0).max(1).optional().describe("Create only; use score_key_result afterwards."),
+        reason: z.string().min(1).max(2000).optional().describe("Update only: why the plan changed."),
+        actorKind: z.enum(ACTOR_KINDS).default("agent"),
+        idempotencyKey: z.string().min(1).max(200).optional()
+      }
+    },
+    async (input) => {
+      try {
+        if (input.id) {
+          const id = await resolveEntityRef(c, input.id);
+          const updated = await c.updateKeyResult(
+            id,
+            defined({
+              title: input.title,
+              body: input.body,
+              month: input.month,
+              dueAt: input.dueAt,
+              status: input.status,
+              reason: input.reason,
+              actorKind: input.actorKind
+            })
+          );
+          return { content: [{ type: "text", text: `updated ${await summarize(updated)}` }] };
+        }
+        if (!input.objectiveId || !input.title) {
+          return {
+            isError: true,
+            content: [{ type: "text", text: "creating a key result needs objectiveId and title" }]
+          };
+        }
+        const objectiveId = await resolveEntityRef(c, input.objectiveId);
+        const month = input.month ?? (await c.currentOkrPeriods()).month;
+        const created = await c.createKeyResult(
+          defined({
+            objectiveId,
+            title: input.title,
+            body: input.body,
+            month,
+            dueAt: input.dueAt,
+            score: input.score,
+            actorKind: input.actorKind,
+            idempotencyKey: input.idempotencyKey
+          })
+        );
+        return {
+          content: [{ type: "text", text: `created ${await summarize(created)} for ${month}\nid: ${created.id}` }]
+        };
+      } catch (err: unknown) {
+        return formatToolError(err);
+      }
+    }
+  );
+
+  server.registerTool(
+    "score_key_result",
+    {
+      title: "Score Key Result",
+      description:
+        "Score a key result from 0 to 1, where about 0.7 means on target; null clears the score. The score change is kept in the change log with the note.",
+      annotations: {
+        readOnlyHint: false,
+        destructiveHint: true,
+        idempotentHint: true,
+        openWorldHint: false
+      },
+      inputSchema: {
+        id: EntityRef,
+        score: z.number().min(0).max(1).nullable(),
+        note: z.string().max(2000).optional().describe("Why this score, e.g. what was delivered."),
+        actorKind: z.enum(ACTOR_KINDS).default("agent")
+      }
+    },
+    async ({ id, score, note, actorKind }) => {
+      try {
+        const resolved = await resolveEntityRef(c, id);
+        const updated = await c.scoreKeyResult(resolved, { score, note, actorKind });
+        return {
+          content: [{ type: "text", text: `scored ${await summarize(updated)}: ${score ?? "cleared"}` }]
+        };
+      } catch (err: unknown) {
+        return formatToolError(err);
+      }
+    }
+  );
+
+  server.registerTool(
+    "record_review",
+    {
+      title: "Record OKR Review",
+      description:
+        "Record a weekly review with that week's Top 5, or a monthly check. Recording again for the same period replaces it; period defaults to the current week or month.",
+      annotations: {
+        readOnlyHint: false,
+        destructiveHint: true,
+        idempotentHint: true,
+        openWorldHint: false
+      },
+      inputSchema: {
+        type: z.enum(["weekly", "monthly"]),
+        period: z.string().max(20).optional().describe("2026-W44 for weekly, 2026-11 for monthly."),
+        body: z.string().default("").describe("Review notes in markdown."),
+        top5: z
+          .array(
+            z.object({
+              title: z.string().min(1).max(500),
+              refs: z.array(EntityRef).max(20).default([]).describe("Tasks this item covers, e.g. BOT-55.")
+            })
+          )
+          .max(5)
+          .default([]),
+        actorKind: z.enum(ACTOR_KINDS).default("agent"),
+        idempotencyKey: z.string().min(1).max(200).optional()
+      }
+    },
+    async ({ type, period, body, top5, actorKind, idempotencyKey }) => {
+      try {
+        let resolvedPeriod = period;
+        if (!resolvedPeriod) {
+          const current = await c.currentOkrPeriods();
+          resolvedPeriod = type === "weekly" ? current.week : current.month;
+        }
+        const items = [];
+        for (const item of top5) {
+          const refIds = [];
+          for (const ref of item.refs) refIds.push(await resolveEntityRef(c, ref));
+          items.push({ title: item.title, refIds });
+        }
+        const review = await c.recordReview(
+          defined({ type, period: resolvedPeriod, body, top5: items, actorKind, idempotencyKey })
+        );
+        return { content: [{ type: "text", text: `recorded ${review.title}\nid: ${review.id}` }] };
+      } catch (err: unknown) {
+        return formatToolError(err);
+      }
+    }
+  );
+
+  server.registerTool(
+    "list_reviews",
+    {
+      title: "List OKR Reviews",
+      description:
+        "Read recent weekly reviews and monthly checks with their Top 5 and notes, newest period first. Filter by quarter or type.",
+      annotations: {
+        readOnlyHint: true,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: false
+      },
+      inputSchema: {
+        quarter: z.string().regex(QUARTER_RE).optional(),
+        type: z.enum(["weekly", "monthly"]).optional(),
+        limit: z.number().int().min(1).max(50).default(5)
+      }
+    },
+    async ({ quarter, type, limit }) => {
+      try {
+        const reviews = await c.listReviews({ quarter, type, limit });
+        const text = reviews.length ? reviews.map(formatReview).join("\n\n") : "no reviews";
+        return { content: [{ type: "text", text }] };
+      } catch (err: unknown) {
+        return formatToolError(err);
+      }
     }
   );
 
