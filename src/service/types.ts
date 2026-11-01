@@ -353,3 +353,129 @@ export const GetLinksInput = z.object({
   direction: z.enum(["outgoing", "incoming", "both"]).default("both")
 });
 export type GetLinksInput = z.infer<typeof GetLinksInput>;
+
+export const QuarterString = z
+  .string()
+  .regex(/^\d{4}Q[1-4]$/, "quarter must look like 2026Q4");
+export const MonthString = z
+  .string()
+  .regex(/^\d{4}-(0[1-9]|1[0-2])$/, "month must look like 2026-10");
+export const IsoWeekString = z
+  .string()
+  .regex(/^\d{4}-W(0[1-9]|[1-4]\d|5[0-3])$/, "week must look like 2026-W44");
+export const OkrScore = z.number().min(0).max(1);
+export const OkrReviewTypeEnum = z.enum(["weekly", "monthly"]);
+export const OkrTier = z.string().trim().min(1).max(40);
+
+/** A quarterly objective for one project. Objectives stay fixed for the
+ *  quarter; the tier ranks projects against each other (P0 before Side 1). */
+export const CreateObjectiveInput = z.object({
+  projectId: Uuid,
+  quarter: QuarterString,
+  title: z.string().min(1).max(500),
+  body: z.string().default(""),
+  tier: OkrTier,
+  /** Lower ranks first. Derived from the tier label (P0 → 0, Side 1 → 11) when omitted. */
+  tierRank: z.number().int().min(0).max(999).nullish(),
+  ownerId: Uuid.nullish(),
+  tags: z.array(z.string()).default([]),
+  actorKind: ActorKindEnum.default("human"),
+  idempotencyKey: z.string().min(1).max(200).nullish()
+});
+export type CreateObjectiveInput = z.infer<typeof CreateObjectiveInput>;
+
+export const UpdateObjectiveInput = z.object({
+  title: z.string().min(1).max(500).optional(),
+  body: z.string().optional(),
+  tier: OkrTier.optional(),
+  tierRank: z.number().int().min(0).max(999).nullable().optional(),
+  ownerId: Uuid.nullable().optional(),
+  status: CanonicalTaskStatusEnum.optional(),
+  /** Why the objective changed. Recorded in the change log. */
+  reason: z.string().trim().min(1).max(2000).optional(),
+  actorKind: ActorKindEnum.default("human")
+});
+export type UpdateObjectiveInput = z.infer<typeof UpdateObjectiveInput>;
+
+/** A key result under an objective, planned for one month of its quarter. */
+export const CreateKeyResultInput = z.object({
+  objectiveId: z.string().min(1).max(64),
+  title: z.string().min(1).max(500),
+  body: z.string().default(""),
+  month: MonthString,
+  dueAt: z.coerce.date().nullish(),
+  score: OkrScore.nullish(),
+  tags: z.array(z.string()).default([]),
+  actorKind: ActorKindEnum.default("human"),
+  idempotencyKey: z.string().min(1).max(200).nullish()
+});
+export type CreateKeyResultInput = z.infer<typeof CreateKeyResultInput>;
+
+/** Edit a key result. A reason (new information, not a new idea) is required
+ *  whenever the plan itself changes: title, body, month or due date. */
+export const UpdateKeyResultInput = z.object({
+  title: z.string().min(1).max(500).optional(),
+  body: z.string().optional(),
+  month: MonthString.optional(),
+  dueAt: z.coerce.date().nullable().optional(),
+  status: CanonicalTaskStatusEnum.optional(),
+  reason: z.string().trim().min(1).max(2000).optional(),
+  actorKind: ActorKindEnum.default("human")
+});
+export type UpdateKeyResultInput = z.infer<typeof UpdateKeyResultInput>;
+
+/** Score a key result from 0 to 1; about 0.7 means on target. */
+export const ScoreKeyResultInput = z.object({
+  score: OkrScore.nullable(),
+  note: z.string().trim().max(2000).optional(),
+  actorKind: ActorKindEnum.default("human")
+});
+export type ScoreKeyResultInput = z.infer<typeof ScoreKeyResultInput>;
+
+export const GetOkrInput = z.object({
+  /** Defaults to the current quarter in the workspace timezone. */
+  quarter: QuarterString.optional(),
+  projectId: Uuid.nullish(),
+  /** Include done and rejected objectives and key results. */
+  includeClosed: z.boolean().default(true)
+});
+export type GetOkrInput = z.infer<typeof GetOkrInput>;
+
+export const OkrTopItem = z.object({
+  title: z.string().trim().min(1).max(500),
+  /** Tasks or notes this item is about (UUID or unique prefix). */
+  refIds: z.array(z.string().min(4).max(64)).max(20).default([])
+});
+export type OkrTopItem = z.infer<typeof OkrTopItem>;
+
+/** Record a weekly review (with that week's Top 5) or a monthly check.
+ *  There is one review per type and period; recording again replaces it. */
+export const RecordReviewInput = z
+  .object({
+    type: OkrReviewTypeEnum,
+    /** 2026-W44 for a weekly review, 2026-11 for a monthly check. */
+    period: z.string().min(1).max(20),
+    body: z.string().default(""),
+    top5: z.array(OkrTopItem).max(5).default([]),
+    actorKind: ActorKindEnum.default("human"),
+    idempotencyKey: z.string().min(1).max(200).nullish()
+  })
+  .superRefine((value, ctx) => {
+    const format = value.type === "weekly" ? IsoWeekString : MonthString;
+    const parsed = format.safeParse(value.period);
+    if (!parsed.success) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["period"],
+        message: parsed.error.issues[0]?.message ?? "invalid period"
+      });
+    }
+  });
+export type RecordReviewInput = z.infer<typeof RecordReviewInput>;
+
+export const ListReviewsInput = z.object({
+  quarter: QuarterString.optional(),
+  type: OkrReviewTypeEnum.optional(),
+  limit: z.number().int().min(1).max(100).default(20)
+});
+export type ListReviewsInput = z.infer<typeof ListReviewsInput>;
