@@ -22,6 +22,8 @@ import {
   updateKeyResult,
   updateObjective
 } from "../src/service/okr.js";
+import { formatOpeningBrief, openingBrief } from "../src/service/opening_brief.js";
+import { briefOkr } from "../src/service/okr.js";
 import { createProject } from "../src/service/projects.js";
 import { DEFAULT_SCOPE as S } from "../src/service/scope.js";
 import {
@@ -492,5 +494,111 @@ describe("reviews", () => {
     expect(weekly.map((r) => reviewMeta(r).period)).toEqual(["2026-W45", "2026-W44"]);
     const all = await listReviews(S, db, { quarter: "2026Q4", limit: 20 });
     expect(all).toHaveLength(3);
+  });
+});
+
+describe("OKR in opening briefs", () => {
+  const now = new Date("2026-10-31T16:00:00Z");
+
+  async function seed() {
+    const research = await createProject(S, db, { key: "RES", name: "Research" });
+    const side = await createProject(S, db, { key: "SIDE", name: "Side" });
+    const resObjective = await createObjective(
+      S,
+      db,
+      CreateObjectiveInput.parse({ projectId: research.id, quarter: "2026Q4", title: "Results paper", tier: "P0" })
+    );
+    await createObjective(
+      S,
+      db,
+      CreateObjectiveInput.parse({ projectId: side.id, quarter: "2026Q4", title: "OKR v1", tier: "Side 2" })
+    );
+    const octKr = await createKeyResult(
+      S,
+      db,
+      CreateKeyResultInput.parse({
+        objectiveId: resObjective.id,
+        title: "Figures 1–2",
+        month: "2026-10",
+        dueAt: "2026-10-31",
+        score: 0.5
+      })
+    );
+    await createKeyResult(
+      S,
+      db,
+      CreateKeyResultInput.parse({ objectiveId: resObjective.id, title: "Remaining figures", month: "2026-11" })
+    );
+    return { research, side, resObjective, octKr };
+  }
+
+  it("shows the project's objective and only this month's key results", async () => {
+    const { research } = await seed();
+    const okr = await briefOkr(S, db, research.id, now);
+    expect(okr?.month).toBe("2026-10");
+    expect(okr?.objectives).toHaveLength(1);
+    expect(okr?.objectives[0]!.keyResults.map((k) => k.title)).toEqual(["Figures 1–2"]);
+    expect(okr?.topFive).toBeNull();
+
+    const brief = await openingBrief(S, db, { projectId: research.id, recentLimit: 5 });
+    brief.okr = okr;
+    const md = formatOpeningBrief(brief);
+    expect(md).toContain("## OKR 2026Q4 — this month (2026-10)");
+    expect(md).toContain("**P0 objective:** Results paper [RES-1]");
+    expect(md).toContain("- [RES-2] Figures 1–2 (due 2026-10-31) · score 0.5");
+    expect(md).not.toContain("[RES-3] Remaining figures");
+  });
+
+  it("shows the workspace tier list and this week's Top 5", async () => {
+    const { octKr } = await seed();
+    await recordReview(
+      S,
+      db,
+      RecordReviewInput.parse({
+        type: "weekly",
+        period: "2026-W44",
+        top5: [{ title: "Finish figures", refIds: [octKr.id] }, { title: "Inbox zero" }]
+      })
+    );
+    const okr = await briefOkr(S, db, null, now);
+    expect(okr?.objectives.map((o) => o.tier)).toEqual(["P0", "Side 2"]);
+    expect(okr?.topFive).toEqual({
+      period: "2026-W44",
+      current: true,
+      items: [
+        { title: "Finish figures", refs: ["RES-2"] },
+        { title: "Inbox zero", refs: [] }
+      ]
+    });
+
+    const brief = await openingBrief(S, db, { recentLimit: 5 });
+    brief.okr = okr;
+    const md = formatOpeningBrief(brief);
+    expect(md).toContain("## OKR 2026Q4 — tiers");
+    expect(md).toContain("- P0 · RES Research: Results paper [RES-1]");
+    expect(md).toContain("- Side 2 · SIDE Side: OKR v1 [SIDE-1]");
+    expect(md).toContain("## Top 5 — this week (2026-W44)");
+    expect(md).toContain("1. Finish figures (RES-2)");
+  });
+
+  it("falls back to the latest earlier Top 5 and labels it", async () => {
+    await seed();
+    await recordReview(
+      S,
+      db,
+      RecordReviewInput.parse({ type: "weekly", period: "2026-W43", top5: [{ title: "Old item" }] })
+    );
+    const okr = await briefOkr(S, db, null, now);
+    expect(okr?.topFive).toMatchObject({ period: "2026-W43", current: false });
+    const brief = await openingBrief(S, db, { recentLimit: 5 });
+    brief.okr = okr;
+    expect(formatOpeningBrief(brief)).toContain("## Top 5 — latest: 2026-W43; no review for 2026-W44 yet");
+  });
+
+  it("leaves the brief unchanged when no OKR exists", async () => {
+    const p = await createProject(S, db, { key: "NONE", name: "None" });
+    expect(await briefOkr(S, db, p.id, now)).toBeNull();
+    const brief = await openingBrief(S, db, { projectId: p.id, recentLimit: 5 });
+    expect(formatOpeningBrief(brief)).not.toContain("## OKR");
   });
 });

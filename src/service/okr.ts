@@ -753,3 +753,146 @@ export async function listReviews(
     .orderBy(sql`${entities.metadata} ->> 'period' DESC`, sql`${entities.metadata} ->> 'type' DESC`)
     .limit(input.limit);
 }
+
+export interface BriefKeyResult {
+  id: string;
+  key: string | null;
+  title: string | null;
+  status: string;
+  month: string;
+  dueAt: Date | null;
+  score: number | null;
+}
+
+export interface BriefObjective {
+  id: string;
+  key: string | null;
+  title: string | null;
+  status: string;
+  tier: string;
+  tierRank: number;
+  project: { key: string; name: string } | null;
+  keyResults: BriefKeyResult[];
+}
+
+export interface BriefTopFive {
+  period: string;
+  /** False when this week has no review yet and the latest earlier one is shown. */
+  current: boolean;
+  items: Array<{ title: string; refs: string[] }>;
+}
+
+export interface BriefOkr {
+  quarter: string;
+  month: string;
+  week: string;
+  objectives: BriefObjective[];
+  topFive: BriefTopFive | null;
+}
+
+async function refLabels(
+  scope: Scope,
+  db: Database["db"],
+  ids: string[]
+): Promise<Map<string, string>> {
+  if (!ids.length) return new Map();
+  const rows = await db
+    .select({ id: entities.id, kind: entities.kind, seq: entities.sequenceId, key: projects.key })
+    .from(entities)
+    .leftJoin(projects, eq(entities.projectId, projects.id))
+    .where(and(eq(entities.workspaceId, scope.workspaceId), inArray(entities.id, ids)));
+  return new Map(
+    rows.map((r) => [
+      r.id,
+      r.key && r.seq != null ? `${r.key}-${r.seq}` : `${r.kind}/${r.id.slice(0, 8)}`
+    ])
+  );
+}
+
+/**
+ * OKR context for an opening brief. A project brief gets that project's open
+ * objectives with this month's key results; the workspace brief gets every open
+ * objective as the tier list plus this week's Top 5.
+ */
+export async function briefOkr(
+  scope: Scope,
+  db: Database["db"],
+  projectId: string | null,
+  now: Date = new Date()
+): Promise<BriefOkr | null> {
+  const periods = await currentPeriods(scope, db, now);
+  const view = await getOkr(
+    scope,
+    db,
+    { quarter: periods.quarter, projectId: projectId ?? undefined, includeClosed: true },
+    now
+  );
+  const activeObjectives = view.objectives.filter(
+    (o) => o.status === "open" || o.status === "in_progress"
+  );
+
+  let topFive: BriefTopFive | null = null;
+  if (!projectId) {
+    const thisWeek = await findReview(scope, db, "weekly", periods.week);
+    const review =
+      thisWeek ??
+      (
+        await db
+          .select()
+          .from(entities)
+          .where(
+            and(
+              eq(entities.workspaceId, scope.workspaceId),
+              eq(entities.kind, "okr_review"),
+              isNull(entities.deletedAt),
+              sql`${entities.metadata} ->> 'type' = 'weekly'`,
+              sql`${entities.metadata} ->> 'period' < ${periods.week}`
+            )
+          )
+          .orderBy(sql`${entities.metadata} ->> 'period' DESC`)
+          .limit(1)
+      )[0];
+    if (review) {
+      const meta = reviewMeta(review);
+      const labels = await refLabels(scope, db, meta.top5.flatMap((t) => t.refIds));
+      topFive = {
+        period: meta.period,
+        current: meta.period === periods.week,
+        items: meta.top5.map((t) => ({
+          title: t.title,
+          refs: t.refIds.map((id) => labels.get(id) ?? id.slice(0, 8))
+        }))
+      };
+    }
+  }
+
+  if (!activeObjectives.length && !topFive) return null;
+  return {
+    quarter: periods.quarter,
+    month: periods.month,
+    week: periods.week,
+    topFive,
+    objectives: activeObjectives.map((o) => ({
+      id: o.id,
+      key: o.key,
+      title: o.title,
+      status: o.status,
+      tier: o.tier,
+      tierRank: o.tierRank,
+      project: o.project ? { key: o.project.key, name: o.project.name } : null,
+      keyResults: projectId
+        ? o.keyResults
+            .filter((kr) => kr.month === periods.month)
+            .map((kr) => ({
+              id: kr.id,
+              key: kr.key,
+              title: kr.title,
+              status: kr.status,
+              month: kr.month,
+              dueAt: kr.dueAt,
+              score: kr.score
+            }))
+        : []
+    }))
+  };
+}
