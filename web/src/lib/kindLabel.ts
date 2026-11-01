@@ -5,5 +5,8 @@ export const KIND_LABEL: Record<EntityKind, string> = {
   task: "task",
   note: "memory",
   worklog: "worklog",
-  feedback: "feedback"
+  feedback: "feedback",
+  objective: "objective",
+  key_result: "key result",
+  okr_review: "review"
 };

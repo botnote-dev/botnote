@@ -77,18 +77,22 @@ describe("botnote MCP", () => {
       "get_entity",
       "get_entity_by_key",
       "get_links",
+      "get_okr",
       "get_project",
       "get_recurrence",
       "link",
       "list_feedback",
       "list_projects",
+      "list_reviews",
       "list_tags",
       "list_tasks",
       "list_worklog",
       "opening_brief",
       "recent",
+      "record_review",
       "related",
       "remember",
+      "score_key_result",
       "search",
       "skip_occurrence",
       "split_recurrence",
@@ -96,7 +100,9 @@ describe("botnote MCP", () => {
       "submit_feedback",
       "update_entities",
       "update_entity",
-      "update_project"
+      "update_project",
+      "upsert_key_result",
+      "upsert_objective"
     ]);
     const resources = await client.listResources();
     const resourceNames = resources.resources.map((r) => r.name);
@@ -124,6 +130,15 @@ describe("botnote MCP", () => {
     expect(byName.get("skip_occurrence")?.annotations?.destructiveHint).toBe(true);
     expect(byName.get("split_recurrence")?.annotations?.readOnlyHint).toBe(false);
     expect(byName.get("split_recurrence")?.annotations?.idempotentHint).toBe(false);
+    expect(byName.get("get_okr")?.annotations?.readOnlyHint).toBe(true);
+    expect(byName.get("list_reviews")?.annotations?.readOnlyHint).toBe(true);
+    for (const name of ["upsert_objective", "upsert_key_result", "score_key_result", "record_review"]) {
+      const a = byName.get(name)?.annotations;
+      expect(a?.readOnlyHint, name).toBe(false);
+      expect(a?.destructiveHint, name).toBe(true);
+      expect(a?.idempotentHint, name).toBe(true);
+      expect(a?.openWorldHint, name).toBe(false);
+    }
   });
 
   it("create_project + remember + search round-trip", async () => {
@@ -1477,5 +1492,106 @@ describe("botnote MCP", () => {
     } finally {
       await new Promise((resolve) => legacyDaemon.close(resolve));
     }
+  });
+});
+
+describe("OKR over MCP and REST", () => {
+  const text = (resp: unknown) =>
+    ((resp as { content: Array<{ text: string }> }).content[0]?.text ?? "");
+
+  it("creates, edits, scores and reviews an OKR end to end", async () => {
+    await client.callTool({
+      name: "create_project",
+      arguments: { key: "OKRM", name: "OKR MCP" }
+    });
+
+    const objResp = await client.callTool({
+      name: "upsert_objective",
+      arguments: { project: "OKRM", quarter: "2026Q4", title: "Ship OKR v1", tier: "Side 2" }
+    });
+    expect(objResp.isError).toBeFalsy();
+    expect(text(objResp)).toMatch(/created OKRM-1 · Ship OKR v1 \(objective, open\) for 2026Q4/);
+
+    const krResp = await client.callTool({
+      name: "upsert_key_result",
+      arguments: { objectiveId: "OKRM-1", title: "v1 released", month: "2026-10", dueAt: "2026-10-31T12:00:00Z" }
+    });
+    expect(text(krResp)).toMatch(/created OKRM-2 · v1 released/);
+
+    const noReason = await client.callTool({
+      name: "upsert_key_result",
+      arguments: { id: "OKRM-2", month: "2026-11" }
+    });
+    expect(noReason.isError).toBe(true);
+    expect(text(noReason)).toMatch(/invalid request: .*reason is required/);
+
+    const moved = await client.callTool({
+      name: "upsert_key_result",
+      arguments: { id: "OKRM-2", month: "2026-11", dueAt: "2026-11-14T12:00:00Z", reason: "Design checkpoint slipped" }
+    });
+    expect(moved.isError).toBeFalsy();
+
+    const scored = await client.callTool({
+      name: "score_key_result",
+      arguments: { id: "OKRM-2", score: 0.4, note: "Service layer only" }
+    });
+    expect(text(scored)).toMatch(/scored OKRM-2 .*: 0.4/);
+
+    const okr = text(await client.callTool({ name: "get_okr", arguments: { quarter: "2026Q4", project: "OKRM" } }));
+    expect(okr).toContain("# OKR 2026Q4 (2026-10 · 2026-11 · 2026-12)");
+    expect(okr).toContain("## Side 2 · OKRM OKR MCP — Ship OKR v1 [OKRM-1] (open)");
+    expect(okr).toContain("- 2026-11 · [OKRM-2] v1 released · due 2026-11-14 · score 0.4 · open");
+
+    const log = text(await client.callTool({ name: "list_worklog", arguments: { id: "OKRM-2" } }));
+    expect(log).toContain("Design checkpoint slipped");
+    expect(log).toContain("Service layer only");
+
+    const review = await client.callTool({
+      name: "record_review",
+      arguments: {
+        type: "weekly",
+        period: "2026-W44",
+        body: "First review on v1.",
+        top5: [{ title: "Finish OKR v1", refs: ["OKRM-1"] }]
+      }
+    });
+    expect(text(review)).toMatch(/recorded Weekly review 2026-W44/);
+
+    const reviews = text(
+      await client.callTool({ name: "list_reviews", arguments: { quarter: "2026Q4", type: "weekly" } })
+    );
+    expect(reviews).toContain("1. Finish OKR v1");
+    expect(reviews).toContain("First review on v1.");
+
+    const rest = (await (await fetch(`${baseUrl}/v1/okr?quarter=2026Q4&includeClosed=false`)).json()) as {
+      quarter: string;
+      objectives: Array<{ key: string; bodyVec?: unknown; keyResults: Array<{ key: string; score: number; month: string }> }>;
+    };
+    expect(rest.quarter).toBe("2026Q4");
+    const objective = rest.objectives.find((o) => o.key === "OKRM-1")!;
+    expect(objective.bodyVec).toBeUndefined();
+    expect(objective.keyResults).toEqual([expect.objectContaining({ key: "OKRM-2", score: 0.4, month: "2026-11" })]);
+
+    const byPeriod = await fetch(`${baseUrl}/v1/okr/reviews/weekly/2026-W44`);
+    expect(byPeriod.status).toBe(200);
+    expect(((await byPeriod.json()) as { body: string }).body).toBe("First review on v1.");
+    expect((await fetch(`${baseUrl}/v1/okr/reviews/weekly/2026-W45`)).status).toBe(404);
+
+    const current = (await (await fetch(`${baseUrl}/v1/okr/current`)).json()) as { quarter: string; week: string };
+    expect(current.quarter).toMatch(/^\d{4}Q[1-4]$/);
+    expect(current.week).toMatch(/^\d{4}-W\d{2}$/);
+  });
+
+  it("rejects a key result month outside the objective's quarter over REST", async () => {
+    const view = (await (await fetch(`${baseUrl}/v1/okr?quarter=2026Q4`)).json()) as {
+      objectives: Array<{ id: string; key: string }>;
+    };
+    const objective = view.objectives.find((o) => o.key === "OKRM-1")!;
+    const res = await fetch(`${baseUrl}/v1/okr/key-results`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ objectiveId: objective.id, title: "next year", month: "2027-01" })
+    });
+    expect(res.status).toBe(400);
   });
 });

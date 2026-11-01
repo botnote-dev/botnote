@@ -4,6 +4,7 @@ export * as projectService from "./projects.js";
 export * as searchService from "./search.js";
 export * as briefService from "./opening_brief.js";
 export * as feedbackService from "./feedback.js";
+export * as okrService from "./okr.js";
 export * as tasksService from "./tasks.js";
 export { EmbeddingService, EMBED_DIM, EMBED_MODEL } from "./embedding.js";
 export type { EmbedFn } from "./embedding.js";

@@ -1,5 +1,20 @@
-export type EntityKind = "task" | "note" | "worklog" | "feedback";
-export const ENTITY_KINDS: EntityKind[] = ["task", "note", "worklog", "feedback"];
+export type EntityKind =
+  | "task"
+  | "note"
+  | "worklog"
+  | "feedback"
+  | "objective"
+  | "key_result"
+  | "okr_review";
+export const ENTITY_KINDS: EntityKind[] = [
+  "task",
+  "note",
+  "worklog",
+  "feedback",
+  "objective",
+  "key_result",
+  "okr_review"
+];
 
 export type FeedbackCategory = "bug" | "feature" | "friction" | "idea";
 export const FEEDBACK_CATEGORIES: FeedbackCategory[] = ["bug", "feature", "friction", "idea"];
@@ -375,4 +390,82 @@ export interface WorkspaceSettings {
 
 export interface UpdateWorkspaceSettingsInput {
   timezone?: string;
+}
+
+export type OkrStatus = "open" | "in_progress" | "done" | "rejected";
+export const OKR_STATUSES: OkrStatus[] = ["open", "in_progress", "done", "rejected"];
+export type ReviewType = "weekly" | "monthly";
+
+export type KeyResult = Entity & {
+  key: string | null;
+  month: string;
+  score: number | null;
+};
+
+export type Objective = Entity & {
+  key: string | null;
+  quarter: string;
+  tier: string;
+  tierRank: number;
+  ownerId: string | null;
+  project: { id: string; key: string; name: string } | null;
+  keyResults: KeyResult[];
+};
+
+export interface OkrQuarter {
+  quarter: string;
+  months: string[];
+  objectives: Objective[];
+}
+
+export interface OkrPeriods {
+  timezone: string;
+  quarter: string;
+  month: string;
+  week: string;
+}
+
+export interface CreateObjectiveInput {
+  projectId: string;
+  quarter: string;
+  title: string;
+  body?: string;
+  tier: string;
+}
+
+export interface UpdateObjectiveInput {
+  title?: string;
+  body?: string;
+  tier?: string;
+  status?: OkrStatus;
+  reason?: string;
+}
+
+export interface CreateKeyResultInput {
+  objectiveId: string;
+  title: string;
+  body?: string;
+  month: string;
+  dueAt?: string | null;
+}
+
+export interface UpdateKeyResultInput {
+  title?: string;
+  body?: string;
+  month?: string;
+  dueAt?: string | null;
+  status?: OkrStatus;
+  reason?: string;
+}
+
+export interface ReviewTopItem {
+  title: string;
+  refIds: string[];
+}
+
+export interface RecordReviewInput {
+  type: ReviewType;
+  period: string;
+  body: string;
+  top5: ReviewTopItem[];
 }

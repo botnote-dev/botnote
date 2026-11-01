@@ -1,5 +1,7 @@
 import type {
+  CreateKeyResultInput,
   CreateNoteInput,
+  CreateObjectiveInput,
   CreateProjectInput,
   CreateTaskInput,
   CreateWorklogEntryInput,
@@ -7,10 +9,14 @@ import type {
   Entity,
   EntityRevision,
   ListFeedbackInput,
+  OkrPeriods,
+  OkrQuarter,
   OpeningBriefResponse,
   Project,
   RecentInput,
+  RecordReviewInput,
   RecurrenceDetails,
+  ReviewType,
   RecurrenceInput,
   RecurrenceRule,
   SearchInput,
@@ -24,6 +30,8 @@ import type {
   EmbeddingSettings,
   UpdateEmbeddingSettingsInput,
   UpdateEntityInput,
+  UpdateKeyResultInput,
+  UpdateObjectiveInput,
   UpdateProjectInput,
   WorkspaceSettings,
   UpdateWorkspaceSettingsInput,
@@ -86,6 +94,30 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 export const api = {
+  okrCurrent: () => request<OkrPeriods>("/v1/okr/current"),
+  getOkr: (quarter: string) =>
+    request<OkrQuarter>(`/v1/okr?quarter=${encodeURIComponent(quarter)}`),
+  createObjective: (input: CreateObjectiveInput) =>
+    request<Entity>("/v1/okr/objectives", { method: "POST", body: JSON.stringify(input) }),
+  updateObjective: (id: string, input: UpdateObjectiveInput) =>
+    request<Entity>(`/v1/okr/objectives/${id}`, { method: "PATCH", body: JSON.stringify(input) }),
+  createKeyResult: (input: CreateKeyResultInput) =>
+    request<Entity>("/v1/okr/key-results", { method: "POST", body: JSON.stringify(input) }),
+  updateKeyResult: (id: string, input: UpdateKeyResultInput) =>
+    request<Entity>(`/v1/okr/key-results/${id}`, { method: "PATCH", body: JSON.stringify(input) }),
+  scoreKeyResult: (id: string, input: { score: number | null; note?: string }) =>
+    request<Entity>(`/v1/okr/key-results/${id}/score`, {
+      method: "POST",
+      body: JSON.stringify(input)
+    }),
+  listReviews: (quarter: string, type?: ReviewType) => {
+    const params = new URLSearchParams({ quarter });
+    if (type) params.set("type", type);
+    return request<Entity[]>(`/v1/okr/reviews?${params.toString()}`);
+  },
+  recordReview: (input: RecordReviewInput) =>
+    request<Entity>("/v1/okr/reviews", { method: "POST", body: JSON.stringify(input) }),
+
   health: () => request<{ ok: boolean; version: string }>("/health"),
 
   listProjects: (opts: { includeArchived?: boolean } = {}) => {

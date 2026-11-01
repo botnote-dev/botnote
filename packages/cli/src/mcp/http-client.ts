@@ -221,6 +221,45 @@ export class BotnoteHttpClient {
   getContext() {
     return this.request<ContextDTO>("GET", "/v1/context");
   }
+
+  // ----- OKR -----
+  getOkr(opts: { quarter?: string; projectId?: string; includeClosed?: boolean } = {}) {
+    const params = new URLSearchParams();
+    if (opts.quarter) params.set("quarter", opts.quarter);
+    if (opts.projectId) params.set("projectId", opts.projectId);
+    if (opts.includeClosed !== undefined) params.set("includeClosed", String(opts.includeClosed));
+    const suffix = params.size ? `?${params.toString()}` : "";
+    return this.request<OkrQuarterDTO>("GET", `/v1/okr${suffix}`);
+  }
+  currentOkrPeriods() {
+    return this.request<OkrPeriodsDTO>("GET", "/v1/okr/current");
+  }
+  createObjective(body: Record<string, unknown>) {
+    return this.request<EntityDTO>("POST", "/v1/okr/objectives", body);
+  }
+  updateObjective(id: string, body: Record<string, unknown>) {
+    return this.request<EntityDTO>("PATCH", `/v1/okr/objectives/${id}`, body);
+  }
+  createKeyResult(body: Record<string, unknown>) {
+    return this.request<EntityDTO>("POST", "/v1/okr/key-results", body);
+  }
+  updateKeyResult(id: string, body: Record<string, unknown>) {
+    return this.request<EntityDTO>("PATCH", `/v1/okr/key-results/${id}`, body);
+  }
+  scoreKeyResult(id: string, body: { score: number | null; note?: string; actorKind?: string }) {
+    return this.request<EntityDTO>("POST", `/v1/okr/key-results/${id}/score`, body);
+  }
+  recordReview(body: Record<string, unknown>) {
+    return this.request<EntityDTO>("POST", "/v1/okr/reviews", body);
+  }
+  listReviews(opts: { quarter?: string; type?: string; limit?: number } = {}) {
+    const params = new URLSearchParams();
+    if (opts.quarter) params.set("quarter", opts.quarter);
+    if (opts.type) params.set("type", opts.type);
+    if (opts.limit) params.set("limit", String(opts.limit));
+    const suffix = params.size ? `?${params.toString()}` : "";
+    return this.request<EntityDTO[]>("GET", `/v1/okr/reviews${suffix}`);
+  }
 }
 
 // ----- Serialization helpers -----
@@ -265,7 +304,7 @@ export interface ProjectDTO {
 export interface EntityDTO {
   id: string;
   projectId: string | null;
-  kind: "task" | "note" | "worklog" | "feedback";
+  kind: "task" | "note" | "worklog" | "feedback" | "objective" | "key_result" | "okr_review";
   title: string | null;
   body: string;
   tags: string[];
@@ -287,6 +326,35 @@ export interface EntityDTO {
   updatedAt: string;
   /** Present on tasks from /v1/tasks/range: unfinished tasks that block this one. */
   blockedBy?: BlockerDTO[];
+}
+
+export type KeyResultDTO = EntityDTO & {
+  key: string | null;
+  month: string;
+  score: number | null;
+};
+
+export type ObjectiveDTO = EntityDTO & {
+  key: string | null;
+  quarter: string;
+  tier: string;
+  tierRank: number;
+  ownerId: string | null;
+  project: { id: string; key: string; name: string } | null;
+  keyResults: KeyResultDTO[];
+};
+
+export interface OkrQuarterDTO {
+  quarter: string;
+  months: string[];
+  objectives: ObjectiveDTO[];
+}
+
+export interface OkrPeriodsDTO {
+  timezone: string;
+  quarter: string;
+  month: string;
+  week: string;
 }
 
 export interface BlockerDTO {

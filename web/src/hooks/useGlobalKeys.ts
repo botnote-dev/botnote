@@ -41,7 +41,7 @@ export function useGlobalKeys() {
       }
       if (e.key === "g") {
         // g-prefixed navigation: g d → Tasks, g t → Today, g i → Inbox,
-        // g w → Workspace.
+        // g o → OKR, g w → Workspace.
         const handler = (ev: KeyboardEvent) => {
           window.removeEventListener("keydown", handler);
           if (isEditableTarget(ev)) return;
@@ -49,6 +49,7 @@ export function useGlobalKeys() {
             d: "/",
             t: "/today",
             i: "/inbox",
+            o: "/okr",
             w: "/dashboard"
           };
           const path = to[ev.key];

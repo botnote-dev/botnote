@@ -5,6 +5,7 @@ import {
   CheckSquareIcon,
   ClockCounterClockwiseIcon,
   MegaphoneIcon,
+  TargetIcon,
   type Icon
 } from "@phosphor-icons/react";
 import type { ComponentProps } from "react";
@@ -18,7 +19,10 @@ const KIND_STYLE: Record<
   task: { icon: CheckSquareIcon, variant: "info" },
   note: { icon: BrainIcon, variant: "secondary" },
   worklog: { icon: ClockCounterClockwiseIcon, variant: "warning" },
-  feedback: { icon: MegaphoneIcon, variant: "outline" }
+  feedback: { icon: MegaphoneIcon, variant: "outline" },
+  objective: { icon: TargetIcon, variant: "success" },
+  key_result: { icon: TargetIcon, variant: "success" },
+  okr_review: { icon: TargetIcon, variant: "outline" }
 };
 
 export function KindBadge({ kind, compact = false }: { kind: EntityKind; compact?: boolean }) {

@@ -1394,7 +1394,10 @@ const PARENT_RELATION: Record<EntityKind, string> = {
   task: "Sub-task of",
   note: "Memory for",
   worklog: "Worklog on",
-  feedback: "Linked to"
+  feedback: "Linked to",
+  objective: "Linked to",
+  key_result: "Key result of",
+  okr_review: "Linked to"
 };
 
 function ParentCrumb({

@@ -2,6 +2,7 @@ import { and, asc, desc, eq, inArray, isNull, sql } from "drizzle-orm";
 import type { Database } from "../db/client.js";
 import { entities, type Entity, type Project } from "../db/schema.js";
 import { blockersFor, type Blocker } from "./blockers.js";
+import { briefOkr, type BriefOkr } from "./okr.js";
 import { getProject } from "./projects.js";
 import type { Scope } from "./scope.js";
 import { tokenLabels } from "./tokens.js";
@@ -19,6 +20,9 @@ export interface OpeningBrief {
   /** Open task id → unfinished tasks that `blocks` it. Absent when unblocked. */
   blockedBy: Record<string, Blocker[]>;
   recent: Entity[];
+  /** Quarter objectives and current KRs (project brief) or the tier list and
+   *  this week's Top 5 (workspace brief). Null when no OKR is recorded. */
+  okr: BriefOkr | null;
   /** Token id -> token name for the authors of latestWorklog, so the
    *  worklog line can say who wrote it. */
   actorLabels: Record<string, string>;
@@ -110,6 +114,8 @@ export async function openingBrief(
     }
   }
 
+  const okr = await briefOkr(scope, db, input.projectId ?? null);
+
   const actorLabels: Record<string, string> = {};
   const authorTokenIds = latestWorklog.map((w) => w.actorTokenId).filter((id): id is string => !!id);
   if (authorTokenIds.length > 0) {
@@ -128,6 +134,7 @@ export async function openingBrief(
     latestWorklog,
     blockedBy,
     recent: recentRows,
+    okr,
     actorLabels,
     generatedAt: new Date(),
     timezone: settings.timezone
@@ -156,6 +163,48 @@ function titleFor(e: Entity): string {
   return "(untitled)";
 }
 
+function formatOkrSection(okr: BriefOkr, isProject: boolean): string[] {
+  const lines: string[] = [];
+  const rule = "_Rule: higher tier goes first. New ideas go to backlog; adding to this week's Top 5 means dropping another._";
+  if (isProject) {
+    lines.push(`## OKR ${okr.quarter} — this month (${okr.month})`);
+    for (const o of okr.objectives) {
+      lines.push(`**${o.tier} objective:** ${o.title ?? "(untitled)"} [${o.key ?? o.id.slice(0, 8)}]`);
+      if (!o.keyResults.length) lines.push(`- (no key results for ${okr.month})`);
+      for (const kr of o.keyResults) {
+        const parts = [`- [${kr.key ?? kr.id.slice(0, 8)}] ${kr.title ?? "(untitled)"}`];
+        if (kr.dueAt) parts.push(`(due ${kr.dueAt.toISOString().slice(0, 10)})`);
+        parts.push(kr.score === null ? "· unscored" : `· score ${kr.score}`);
+        if (kr.status !== "open") parts.push(`· ${kr.status}`);
+        lines.push(parts.join(" "));
+      }
+    }
+    if (!okr.objectives.length) lines.push("_No objective for this project this quarter._");
+    lines.push(rule);
+    return lines;
+  }
+  if (okr.objectives.length) {
+    lines.push(`## OKR ${okr.quarter} — tiers`);
+    for (const o of okr.objectives) {
+      const project = o.project ? `${o.project.key} ${o.project.name}` : "workspace";
+      lines.push(`- ${o.tier} · ${project}: ${o.title ?? "(untitled)"} [${o.key ?? o.id.slice(0, 8)}]`);
+    }
+    lines.push(rule);
+  }
+  if (okr.topFive) {
+    if (lines.length) lines.push("");
+    const label = okr.topFive.current
+      ? `this week (${okr.topFive.period})`
+      : `latest: ${okr.topFive.period}; no review for ${okr.week} yet`;
+    lines.push(`## Top 5 — ${label}`);
+    okr.topFive.items.forEach((item, i) => {
+      const refs = item.refs.length ? ` (${item.refs.join(", ")})` : "";
+      lines.push(`${i + 1}. ${item.title}${refs}`);
+    });
+  }
+  return lines;
+}
+
 export function formatOpeningBrief(brief: OpeningBrief): string {
   const lines: string[] = [];
   const projectKey = brief.project?.key ?? null;
@@ -174,6 +223,8 @@ export function formatOpeningBrief(brief: OpeningBrief): string {
     lines.push(brief.agentsMd.trim());
     lines.push("");
   }
+
+  if (brief.okr) lines.push(...formatOkrSection(brief.okr, Boolean(brief.project)), "");
 
   if (brief.pinnedNotes.length) {
     lines.push(`## Pinned Notes (${brief.pinnedNotes.length})`);
