@@ -4041,3 +4041,149 @@ describe("search by KEY-SEQ identifier", () => {
     expect(similar.map((h) => h.entity.id)).not.toContain(referenced.id);
   });
 });
+
+describe("KEY-SEQ follows the project an entity lives in", () => {
+  const base = { body: "", tags: [], status: "open", actorKind: "human", metadata: {} } as const;
+
+  async function task(projectId: string | null, title: string) {
+    return write(S, db, { kind: "task", projectId, title, ...base });
+  }
+
+  async function nextSeqOf(projectId: string): Promise<number> {
+    const res = await db.execute(sql`SELECT next_seq FROM projects WHERE id = ${projectId}::uuid`);
+    return (res.rows[0] as { next_seq: number }).next_seq;
+  }
+
+  it("gives a moved entity the destination's next number and frees the old key", async () => {
+    const src = await createProject(S, db, { key: "MSRC", name: "Source" });
+    const dst = await createProject(S, db, { key: "MDST", name: "Destination" });
+    await task(src.id, "src one");
+    const moving = await task(src.id, "src two");
+    const dstOne = await task(dst.id, "dst one");
+    expect(moving.sequenceId).toBe(2);
+    expect(dstOne.sequenceId).toBe(1);
+
+    const moved = await update(S, db, moving.id, { projectId: dst.id });
+    expect(moved.sequenceId).toBe(2);
+    expect((await getByKey(S, db, "MDST", 2))?.id).toBe(moving.id);
+    expect(await getByKey(S, db, "MSRC", 2)).toBeNull();
+    expect((await getByKey(S, db, "MDST", 1))?.id).toBe(dstOne.id);
+
+    const later = await task(dst.id, "dst after move");
+    expect(later.sequenceId).toBe(3);
+    expect(await nextSeqOf(src.id)).toBe(3);
+  });
+
+  it("does not collide with a number the destination already issued", async () => {
+    const src = await createProject(S, db, { key: "CSRC", name: "Source" });
+    const dst = await createProject(S, db, { key: "CDST", name: "Destination" });
+    const moving = await task(src.id, "src one");
+    for (const title of ["dst one", "dst two", "dst three"]) await task(dst.id, title);
+
+    const moved = await update(S, db, moving.id, { projectId: dst.id });
+    expect(moved.sequenceId).toBe(4);
+    expect((await getByKey(S, db, "CDST", 1))?.title).toBe("dst one");
+  });
+
+  it("clears the number on a move to workspace scope and issues a fresh one on the way back", async () => {
+    const p = await createProject(S, db, { key: "WSP", name: "Workspace round trip" });
+    const t = await task(p.id, "round trip");
+    await task(p.id, "stays");
+
+    const out = await update(S, db, t.id, { projectId: null });
+    expect(out.projectId).toBeNull();
+    expect(out.sequenceId).toBeNull();
+    expect(await getByKey(S, db, "WSP", 1)).toBeNull();
+
+    const back = await update(S, db, t.id, { projectId: p.id });
+    expect(back.sequenceId).toBe(3);
+
+    const unscoped = await task(null, "never had a project");
+    expect(unscoped.sequenceId).toBeNull();
+    const adopted = await update(S, db, unscoped.id, { projectId: p.id });
+    expect(adopted.sequenceId).toBe(4);
+  });
+
+  it("keeps the number when the update repeats the current project", async () => {
+    const p = await createProject(S, db, { key: "SAME", name: "Same project" });
+    await task(p.id, "first");
+    const t = await task(p.id, "second");
+    const same = await update(S, db, t.id, { projectId: p.id, title: "second, renamed" });
+    expect(same.sequenceId).toBe(2);
+    expect(await nextSeqOf(p.id)).toBe(3);
+  });
+
+  it("moves worklog entries with their task without renumbering or resurfacing them", async () => {
+    const src = await createProject(S, db, { key: "WLS", name: "Worklog source" });
+    const dst = await createProject(S, db, { key: "WLD", name: "Worklog destination" });
+    const t = await task(src.id, "logged task");
+    const entry = await addWorklogEntry(S, db, t.id, { body: "did the thing", actorKind: "agent", metadata: {} });
+
+    await update(S, db, t.id, { projectId: dst.id });
+    const [after] = await listWorklog(S, db, t.id);
+    expect(after?.projectId).toBe(dst.id);
+    expect(after?.sequenceId).toBeNull();
+    expect(after!.updatedAt.getTime() - entry.updatedAt.getTime()).toBeLessThanOrEqual(1);
+    expect(await nextSeqOf(dst.id)).toBe(2);
+  });
+
+  it("refuses to move OKR entities between projects", async () => {
+    const a = await createProject(S, db, { key: "OKA", name: "OKR A" });
+    const b = await createProject(S, db, { key: "OKB", name: "OKR B" });
+    for (const kind of ["objective", "key_result"] as const) {
+      const e = await write(S, db, { kind, projectId: a.id, title: `${kind} in A`, ...base });
+      await expect(update(S, db, e.id, { projectId: b.id })).rejects.toMatchObject({ statusCode: 400 });
+      await expect(update(S, db, e.id, { projectId: null })).rejects.toMatchObject({ statusCode: 400 });
+      expect((await update(S, db, e.id, { projectId: a.id, title: "same project is fine" })).projectId).toBe(a.id);
+    }
+  });
+
+  it("rejects a project id that does not exist", async () => {
+    const t = await task(null, "orphan");
+    const missing = "00000000-0000-4000-8000-0000000000ff";
+    await expect(write(S, db, { kind: "task", projectId: missing, title: "x", ...base })).rejects.toMatchObject({
+      statusCode: 404
+    });
+    await expect(update(S, db, t.id, { projectId: missing })).rejects.toMatchObject({ statusCode: 404 });
+  });
+
+  it("migration 0034 repairs legacy moves without renumbering visible keys and is idempotent", async () => {
+    const src = await createProject(S, db, { key: "LSRC", name: "Legacy source" });
+    const dst = await createProject(S, db, { key: "LDST", name: "Legacy destination" });
+    await task(src.id, "src one");
+    const carried = await task(src.id, "src two");
+    const leftScope = await task(src.id, "src three");
+    await task(dst.id, "dst one");
+    const adopted = await task(null, "workspace note");
+
+    // Recreate what the INSERT-only trigger left behind.
+    await db.execute(sql`ALTER TABLE entities DISABLE TRIGGER entities_set_sequence_id`);
+    try {
+      await db.execute(sql`UPDATE entities SET project_id = ${dst.id}::uuid WHERE id IN (${carried.id}::uuid, ${adopted.id}::uuid)`);
+      await db.execute(sql`UPDATE entities SET project_id = NULL WHERE id = ${leftScope.id}::uuid`);
+    } finally {
+      await db.execute(sql`ALTER TABLE entities ENABLE TRIGGER entities_set_sequence_id`);
+    }
+    expect(await nextSeqOf(dst.id)).toBe(2);
+    const stampsBefore = await db.execute(
+      sql`SELECT id, updated_at FROM entities WHERE id IN (${carried.id}::uuid, ${adopted.id}::uuid, ${leftScope.id}::uuid) ORDER BY id`
+    );
+
+    const migration = readFileSync(
+      new URL("../src/db/migrations/0034_resequence_on_project_move.sql", import.meta.url),
+      "utf8"
+    );
+    for (let pass = 0; pass < 2; pass++) await db.execute(sql.raw(migration));
+
+    expect((await getByKey(S, db, "LDST", 2))?.id).toBe(carried.id);
+    expect((await get(S, db, leftScope.id))?.sequenceId).toBeNull();
+    expect((await get(S, db, adopted.id))?.sequenceId).toBe(3);
+    expect(await nextSeqOf(dst.id)).toBe(4);
+    expect((await task(dst.id, "after repair")).sequenceId).toBe(4);
+
+    const stampsAfter = await db.execute(
+      sql`SELECT id, updated_at FROM entities WHERE id IN (${carried.id}::uuid, ${adopted.id}::uuid, ${leftScope.id}::uuid) ORDER BY id`
+    );
+    expect(stampsAfter.rows).toEqual(stampsBefore.rows);
+  });
+});

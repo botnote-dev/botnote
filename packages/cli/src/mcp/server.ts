@@ -904,7 +904,7 @@ export function buildMcpServer(ctx: McpServerContext): McpServer {
         "- task completion: `status='done'`. Add a closing `add_worklog` entry summarizing what was done.\n" +
         "- task cancellation / give up: `status='rejected'`.\n" +
         "- start work: `status='in_progress'` ONLY when work actually begins in this turn (not just on every mention).\n" +
-        "- move between projects: pass `projectId` (or `null` to move to workspace scope).\n" +
+        "- move between projects: pass `projectId` (or `null` to move to workspace scope). The entity gets a new KEY-SEQ in the target project; use the new one afterwards.\n" +
         "- re-parent: pass `parentId` (or `null` to detach).\n" +
         "- pin/unpin: `pinned: true/false`. Pinned notes drive opening_brief — use sparingly.\n" +
         "- title=null clears the title (notes only).\n" +
@@ -967,8 +967,15 @@ export function buildMcpServer(ctx: McpServerContext): McpServer {
           Object.entries(fields).filter(([, v]) => v !== undefined)
         );
         if (resolvedParentId !== undefined) defined.parentId = resolvedParentId;
+        const before = defined.projectId !== undefined ? await c.getEntity(resolvedId) : null;
         const updated = await c.updateEntity(resolvedId, defined);
         let text = `updated ${await summarize(updated)}`;
+        if (before && before.projectId !== updated.projectId) {
+          const keys = await projectKeysFor([before, updated]);
+          const label = (e: EntityDTO) =>
+            entityRefLabel(e, e.projectId ? (keys.get(e.projectId) ?? null) : null);
+          text += `\nmoved ${label(before)} → ${label(updated)}; the old reference no longer resolves.`;
+        }
         // Closing a milestone parent with open children is usually a mistake —
         // warn (don't block) so the agent can double-check with the user.
         if (defined.status === "done" && updated.kind === "task") {
