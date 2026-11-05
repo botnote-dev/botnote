@@ -4187,3 +4187,71 @@ describe("KEY-SEQ follows the project an entity lives in", () => {
     expect(stampsAfter.rows).toEqual(stampsBefore.rows);
   });
 });
+
+describe("all-day rule whose dtstart is later in the day than noon UTC", () => {
+  // Mirrors a live rule: weekly on Sunday at 09:00 ET (13:00Z), all-day, so
+  // every occurrence is stored at 12:00Z — before the raw rrule hit that day.
+  const sunday = (iso: string) => new Date(`${iso}T13:00:00.000Z`);
+  const noon = (iso: string) => new Date(`${iso}T12:00:00.000Z`);
+  const rule = {
+    preset: "weekly",
+    interval: 1,
+    byWeekday: ["SU"],
+    timezone: "America/New_York",
+    allDay: true,
+    anchor: "scheduled"
+  } as const;
+
+  async function seed(key: string) {
+    const p = await createProject(S, db, { key, name: key });
+    const task = await write(S, db, {
+      kind: "task",
+      projectId: p.id,
+      title: "Weekly review",
+      body: "",
+      tags: [],
+      status: "open",
+      actorKind: "human",
+      metadata: {}
+    });
+    await createRecurrenceRule(S, db, task.id, { ...rule, dtstart: sunday("2026-10-04") });
+    return { p, task };
+  }
+
+  it("materializes each Sunday once and burns no KEY-SEQ numbers", async () => {
+    const { p, task } = await seed("SUNSPIN");
+    const created = await materializeScheduledRecurrences(db, new Date("2026-10-25T23:00:00.000Z"));
+
+    expect(created.map((e) => e.dueAt?.toISOString())).toEqual([
+      noon("2026-10-11").toISOString(),
+      noon("2026-10-18").toISOString(),
+      noon("2026-10-25").toISOString()
+    ]);
+    const details = await getRecurrenceForTask(S, db, task.id);
+    expect(details?.rule.nextOccurrenceAt?.toISOString()).toBe(noon("2026-11-01").toISOString());
+    expect(details?.rule.generatedCount).toBeLessThan(10);
+
+    const again = await materializeScheduledRecurrences(db, new Date("2026-10-25T23:00:00.000Z"));
+    expect(again).toHaveLength(0);
+    const project = await getProjectByKey(S, db, p.key);
+    expect(project?.nextSeq).toBe(5);
+  });
+
+  it("completing an occurrence before the raw hour advances to the next Sunday", async () => {
+    const { p, task } = await seed("SUNDONE");
+    await materializeScheduledRecurrences(db, new Date("2026-10-11T23:00:00.000Z"));
+    const current = (await getRecurrenceForTask(S, db, task.id))!.currentOccurrence!;
+    expect(current.dueAt?.toISOString()).toBe(noon("2026-10-11").toISOString());
+
+    await update(S, db, current.id, {
+      status: "done",
+      completedAt: new Date("2026-10-11T12:30:00.000Z")
+    });
+
+    const after = (await getRecurrenceForTask(S, db, task.id))!;
+    expect(after.currentOccurrence?.id).not.toBe(current.id);
+    expect(after.currentOccurrence?.dueAt?.toISOString()).toBe(noon("2026-10-18").toISOString());
+    const project = await getProjectByKey(S, db, p.key);
+    expect(project?.nextSeq).toBe(4);
+  });
+});

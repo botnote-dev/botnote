@@ -183,13 +183,34 @@ function computeNextOccurrenceAt(
   const rrule = buildRRule(rule, dtstart);
   const scheduledBase = occurrence.dueAt ?? rule.dtstart;
   const cursor = anchor === "completion" ? completedAt : maxDate(scheduledBase, completedAt);
-  const next = rrule.after(cursor, false);
-  return next ? normalizeOccurrenceDueAt(rule, next) : null;
+  return nextNormalizedAfter(rule, rrule, cursor, scheduledBase);
 }
 
 function computeNextScheduledAfter(rule: RecurrenceRule, after: Date): Date | null {
-  const next = buildRRule(rule, rule.dtstart).after(after, false);
-  return next ? normalizeOccurrenceDueAt(rule, next) : null;
+  return nextNormalizedAfter(rule, buildRRule(rule, rule.dtstart), after, after);
+}
+
+const MAX_SAME_DAY_SKIPS = 1000;
+
+/**
+ * First occurrence after `cursor` whose normalized due date is strictly later
+ * than `floor`. All-day normalization snaps to noon UTC, so a raw hit later on
+ * the floor's own day (dtstart 13:00Z, due 12:00Z) maps back onto the floor;
+ * returning it would re-issue the same occurrence forever.
+ */
+function nextNormalizedAfter(
+  rule: RecurrenceRule,
+  rrule: ReturnType<typeof buildRRule>,
+  cursor: Date,
+  floor: Date
+): Date | null {
+  let raw = rrule.after(cursor, false);
+  for (let i = 0; raw && i < MAX_SAME_DAY_SKIPS; i++) {
+    const due = normalizeOccurrenceDueAt(rule, raw);
+    if (due.getTime() > floor.getTime()) return due;
+    raw = rrule.after(raw, false);
+  }
+  return null;
 }
 
 /** Internal fetch by id for rows already known to belong to a rule's workspace. */
@@ -609,19 +630,27 @@ async function insertNextOccurrence(
     completedAt: null,
     idempotencyKey
   };
+  const findExisting = async () =>
+    (
+      await db
+        .select()
+        .from(entities)
+        .where(
+          and(eq(entities.idempotencyKey, idempotencyKey), eq(entities.workspaceId, rule.workspaceId))
+        )
+        .limit(1)
+    )[0];
+  // The sequence trigger runs before ON CONFLICT drops the row, so every
+  // conflicting insert would burn a KEY-SEQ number. Look first.
+  const before = await findExisting();
+  if (before) return before;
   const inserted = await db
     .insert(entities)
     .values(values)
     .onConflictDoNothing()
     .returning();
   if (inserted[0]) return inserted[0];
-  const rows = await db
-    .select()
-    .from(entities)
-    .where(
-      and(eq(entities.idempotencyKey, idempotencyKey), eq(entities.workspaceId, rule.workspaceId))
-    );
-  const existing = rows[0];
+  const existing = await findExisting();
   if (!existing) throw new Error("recurrence idempotent insert returned no row");
   return existing;
 }
