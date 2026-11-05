@@ -138,6 +138,16 @@ describe("workspace scope: isolation across workspaces", () => {
     await expect(link(A, db, { fromId: a.id, toId: a.id, kind: "references" })).rejects.toThrow(/itself/);
   });
 
+  it("refuses to file or move an entity into another workspace's project", async () => {
+    const projectB = await createProject(B, db, { key: "PB", name: "Project in B" });
+    const a = await write(A, db, taskInput("owner A"));
+
+    await expect(write(A, db, taskInput("into B", projectB.id))).rejects.toThrow(/not found/);
+    await expect(update(A, db, a.id, { projectId: projectB.id })).rejects.toThrow(/not found/);
+    expect((await get(A, db, a.id))?.projectId).toBeNull();
+    expect((await recent(B, db, { projectId: projectB.id, limit: 10 })).length).toBe(0);
+  });
+
   it("lets two workspaces reuse the same project key and idempotency key", async () => {
     const pa = await createProject(A, db, { key: "DUP", name: "A's DUP" });
     const pb = await createProject(B, db, { key: "DUP", name: "B's DUP" });

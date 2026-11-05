@@ -1091,6 +1091,28 @@ describe("botnote MCP", () => {
     expect(linksText).toContain("beta");
   });
 
+  it("update_entity reports the new KEY-SEQ when a task moves projects", async () => {
+    const projectIdOf = async (key: string) => {
+      const resp = await client.callTool({ name: "create_project", arguments: { key, name: `${key} project` } });
+      return (resp.content as Array<{ text: string }>)[0]?.text.match(/id: ([0-9a-f-]{36})/)?.[1];
+    };
+    const srcId = await projectIdOf("MVSRC");
+    const dstId = await projectIdOf("MVDST");
+    await client.callTool({ name: "create_task", arguments: { projectId: srcId, title: "Moving task" } });
+    await client.callTool({ name: "create_task", arguments: { projectId: dstId, title: "Already there" } });
+
+    const resp = await client.callTool({
+      name: "update_entity",
+      arguments: { id: "MVSRC-1", projectId: dstId }
+    });
+    const text = (resp.content as Array<{ text: string }>)[0]?.text ?? "";
+    expect(text).toContain("updated MVDST-2 · Moving task");
+    expect(text).toContain("moved MVSRC-1 → MVDST-2");
+
+    const untouched = await client.callTool({ name: "update_entity", arguments: { id: "MVDST-1", title: "Still there" } });
+    expect((untouched.content as Array<{ text: string }>)[0]?.text).not.toContain("moved");
+  });
+
   it("update_entity bodyAppend appends atomically", async () => {
     const cpResp = await client.callTool({
       name: "create_project",

@@ -90,6 +90,25 @@ async function existsInScope(scope: Scope, db: Database["db"], id: string): Prom
   return rows.length > 0;
 }
 
+async function assertProjectInScope(
+  scope: Scope,
+  db: Database["db"],
+  projectId: string
+): Promise<void> {
+  const [project] = await db
+    .select({ id: projects.id })
+    .from(projects)
+    .where(and(eq(projects.id, projectId), eq(projects.workspaceId, scope.workspaceId)))
+    .limit(1);
+  if (!project) throw clientError(`project ${projectId} not found`, 404);
+}
+
+/**
+ * OKR entities keep the project they were created in: key results inherit
+ * their objective's project, and reviews are workspace-wide.
+ */
+const PROJECT_PINNED_KINDS = new Set(["objective", "key_result", "okr_review"]);
+
 /**
  * A parent link must never point back at the entity itself, directly or via
  * the parent's own parent. listChildren would otherwise list an entity as its
@@ -132,6 +151,7 @@ export async function write(scope: Scope, db: Database["db"], input: WriteInput)
   if (input.parentId && !(await existsInScope(scope, db, input.parentId))) {
     throw clientError(`parent entity ${input.parentId} not found`, 404);
   }
+  if (input.projectId) await assertProjectInScope(scope, db, input.projectId);
   const [row] = await db
     .insert(entities)
     .values({
@@ -288,11 +308,13 @@ export async function update(
   let enteredDone = false;
   let preEditSnapshot: Partial<Record<ContentFieldKey, unknown>> | null = null;
   let revision: RevisionSnapshot | null = null;
+  let movesProject = false;
 
   {
     const prior = await db
       .select({
         kind: entities.kind,
+        projectId: entities.projectId,
         status: entities.status,
         title: entities.title,
         body: entities.body,
@@ -307,6 +329,16 @@ export async function update(
     if (prior[0].deletedAt) throw inTrash();
     if (prior[0].kind === "worklog") {
       throw clientError("worklog entries are append-only; add a new entry instead of editing", 400);
+    }
+    if (fields.projectId !== undefined && fields.projectId !== prior[0].projectId) {
+      if (PROJECT_PINNED_KINDS.has(prior[0].kind)) {
+        throw clientError(
+          `a ${prior[0].kind.replace("_", " ")} cannot move to another project; create it in the target project instead`,
+          400
+        );
+      }
+      if (fields.projectId !== null) await assertProjectInScope(scope, db, fields.projectId);
+      movesProject = true;
     }
     // Only touch completedAt when the status itself is changing — an unrelated
     // field update on an already-done task must not clear its completion stamp.
@@ -377,11 +409,27 @@ export async function update(
   const snapshot = revision;
   const [row] = await db.transaction(async (tx) => {
     if (snapshot) await recordRevision(tx, snapshot);
-    return tx
+    const updated = await tx
       .update(entities)
       .set(set)
       .where(and(eq(entities.id, entityId), inScope(scope)))
       .returning();
+    if (movesProject && updated[0]) {
+      // Worklog entries follow their parent so project-scoped search and
+      // recent still find them. Shifting updated_at by a microsecond makes the
+      // touch trigger keep it (see 0032), so old log lines do not resurface
+      // at the top of "recent".
+      await tx
+        .update(entities)
+        .set({
+          projectId: updated[0].projectId,
+          updatedAt: sql`${entities.updatedAt} + interval '1 microsecond'`
+        })
+        .where(
+          and(eq(entities.parentId, entityId), eq(entities.kind, "worklog"), inScope(scope))
+        );
+    }
+    return updated;
   });
   if (!row) throw new Error(`entity ${id} not found`);
   if (fields.parentId !== undefined && fields.parentId !== null) {
