@@ -18,7 +18,7 @@ Argument: `<task-key-or-project-key>`.
    - Use the task's `projectId` when present and call `mcp__botnote__opening_brief` with that `projectId`; otherwise call `mcp__botnote__opening_brief` without a `projectId`.
    - If the task is `open`, update it to `in_progress` with `mcp__botnote__update_entity`, `actorKind: "agent"`, and an idempotency key for this start-work action.
    - If the task is already `in_progress`, continue without changing it, and call `mcp__botnote__list_worklog` with the task id — the worklog records what previous sessions did and where they stopped. Summarize the latest entry in the focused-task summary.
-   - If the task is `done`, `cancelled`, or otherwise terminal, do not reopen it automatically; ask whether the user wants to reopen or only review context.
+   - If the task is `done` or `rejected` (cancelled — say "cancelled" to the user), do not reopen it automatically; ask whether the user wants to reopen or only review context.
 
 3. When only a project is resolved:
    - Call `mcp__botnote__opening_brief` with the resolved `projectId`.

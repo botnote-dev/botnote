@@ -112,8 +112,8 @@ botnote worklog OPS-12 "Renewed staging, prod still pending"
 botnote done OPS-12 --worklog "Both environments renewed"
 ```
 
-`--status` accepts `open`, `in_progress`, `done`, `rejected`; `--priority`
-accepts `urgent`, `high`, `medium`, `low`, `none`. A date-only `--due` is
+`--status` accepts `open`, `in_progress`, `done`, `rejected` (cancelled;
+shown as "Cancelled" in the web UI); `--priority` accepts `urgent`, `high`, `medium`, `low`, `none`. A date-only `--due` is
 stored at noon UTC so it reads as the same day in every timezone.
 
 ### Local daemon development
