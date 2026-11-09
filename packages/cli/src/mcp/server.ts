@@ -286,7 +286,7 @@ const SERVER_INSTRUCTIONS = `botnote is the user's task + memory system. Rules f
 Proactive task capture (create first, then tell the user):
 - Before starting work the user asked for (build, fix, change, investigate), make sure it has a botnote task. If none matches, create one with create_task, then report it in one line ("Added BOT-55: <title>"). Do not wait to be reminded.
 - When new work emerges mid-task that is outside the current task's scope (a bug found, a follow-up, a deferred "later" item), create a task for it linked via parentId instead of silently doing it or letting it drop.
-- Ask first only when the project is ambiguous or the work needs splitting into several tasks. Otherwise just create it — tasks are cheap and the user can reject them.
+- Ask first only when the project is ambiguous or the work needs splitting into several tasks. Otherwise just create it — tasks are cheap and the user can cancel them.
 - Your client's built-in todo/plan list is session-scratch and does not replace botnote tasks.
 - Skip trivial asks (questions, one-line tweaks finished in the same turn).
 
@@ -295,6 +295,7 @@ Task scope:
 
 References:
 - Refer to tasks and notes by their KEY-SEQ identifier (e.g. BOT-55) when talking to the user, never by UUID.
+- The task status value \`rejected\` means cancelled. Say "cancelled" / "cancel" when talking to the user, never "rejected" / "reject".
 
 Worklog:
 - When pausing or finishing work on a task, record progress with add_worklog (what was done, what's next, blockers). The opening brief surfaces the latest worklog entry per in_progress task, so this is how the next session resumes.
@@ -902,7 +903,7 @@ export function buildMcpServer(ctx: McpServerContext): McpServer {
         "\n" +
         "Common transitions:\n" +
         "- task completion: `status='done'`. Add a closing `add_worklog` entry summarizing what was done.\n" +
-        "- task cancellation / give up: `status='rejected'`.\n" +
+        "- task cancellation / give up: `status='rejected'` (the stored value for a cancelled task; call it cancelled when reporting to the user).\n" +
         "- start work: `status='in_progress'` ONLY when work actually begins in this turn (not just on every mention).\n" +
         "- move between projects: pass `projectId` (or `null` to move to workspace scope). The entity gets a new KEY-SEQ in the target project; use the new one afterwards.\n" +
         "- re-parent: pass `parentId` (or `null` to detach).\n" +
@@ -1436,7 +1437,7 @@ export function buildMcpServer(ctx: McpServerContext): McpServer {
     {
       title: "List Tasks",
       description:
-        "Return tasks split into Overdue / Scheduled / Backlog buckets for a given date range. Scheduled includes tasks whose display date falls in [from, to). Overdue is unfinished work before the range start (or before now when from is omitted). Backlog is undated tasks (when includeBacklog is true). Rejected and archived tasks never appear in any bucket — use the project views to inspect cancelled work.",
+        "Return tasks split into Overdue / Scheduled / Backlog buckets for a given date range. Scheduled includes tasks whose display date falls in [from, to). Overdue is unfinished work before the range start (or before now when from is omitted). Backlog is undated tasks (when includeBacklog is true). Cancelled (status `rejected`) and archived tasks never appear in any bucket — use the project views to inspect cancelled work.",
       annotations: {
         readOnlyHint: true,
         destructiveHint: false,
