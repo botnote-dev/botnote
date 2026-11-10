@@ -78,7 +78,7 @@ export function displayDate(t: Entity): Date | null {
 
 export function isTaskOverdue(t: Entity, now = new Date()): boolean {
   if (!t.dueAt) return false;
-  if (t.status === "done" || t.status === "in_progress" || t.status === "rejected") {
+  if (t.status === "done" || t.status === "rejected" || t.status === "archived") {
     return false;
   }
   return new Date(t.dueAt).getTime() < startOfDay(now).getTime();

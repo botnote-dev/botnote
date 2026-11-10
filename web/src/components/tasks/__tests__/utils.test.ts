@@ -240,8 +240,13 @@ describe("isTaskOverdue", () => {
     expect(isTaskOverdue(t, now)).toBe(false);
   });
 
-  it("returns false for in_progress tasks", () => {
+  it("returns true for in_progress task with past dueAt", () => {
     const t = makeTask({ status: "in_progress", dueAt: "2020-01-01T00:00:00Z" });
+    expect(isTaskOverdue(t, now)).toBe(true);
+  });
+
+  it("returns false for in_progress task with future dueAt", () => {
+    const t = makeTask({ status: "in_progress", dueAt: "2024-12-31T00:00:00Z" });
     expect(isTaskOverdue(t, now)).toBe(false);
   });
 
