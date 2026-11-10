@@ -2,7 +2,7 @@
   "name": "botnote",
   "displayName": "botnote",
   "version": "0.2.24",
-  "description": "Notion for bots — capture + recall + project context for AI agents. Plugin bundles the botnote MCP server with /today, /show-todo, /remember, /recall, /add-task, /start-work, /done slash commands and a curator subagent.",
+  "description": "Notion for bots — capture + recall + project context for AI agents. Plugin connects to your botnote daemon's MCP endpoint and adds /today, /show-todo, /remember, /recall, /add-task, /start-work, /done slash commands and a curator subagent.",
   "author": {
     "name": "Jianhua Wang"
   },
@@ -13,12 +13,13 @@
     "botnote_url": {
       "type": "string",
       "title": "botnote daemon URL",
-      "description": "Leave empty for a daemon on this machine (http://127.0.0.1:4280). For a remote daemon enter its URL, e.g. https://botnote.example.com, and set botnote_token."
+      "description": "Base URL of your botnote daemon, without a trailing slash, e.g. https://botnote.example.com. The default is a daemon on this machine. For any other URL also set botnote_token.",
+      "default": "http://127.0.0.1:4280"
     },
     "botnote_token": {
       "type": "string",
       "title": "API bearer token",
-      "description": "Required for public or token-gated botnote URLs. Generate one in Settings -> API tokens. Not needed when botnote_url points to a trusted local daemon.",
+      "description": "Required for any daemon that is not on this machine. Generate one in Settings -> API tokens. Leave empty for a local daemon that trusts loopback.",
       "sensitive": true
     }
   }

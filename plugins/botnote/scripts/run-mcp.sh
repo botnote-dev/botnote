@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
 # Wrapper that runs the botnote CLI in MCP stdio mode.
+# Used by the Codex and Cursor plugins. The Claude Code plugin does not run
+# this: its .mcp.json connects straight to the daemon's /mcp endpoint.
 # Resolution order:
 #   1. BOTNOTE_BIN env var (manual override, e.g. for dev checkouts)
 #   2. `botnote` on PATH only when it matches this plugin version
