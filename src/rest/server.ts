@@ -31,6 +31,7 @@ import {
   isTrustedWithoutCredential,
   type AuthConfig
 } from "./auth.js";
+import { isMcpPath, registerMcpRoute } from "./mcp.js";
 import { registerRoutes } from "./routes.js";
 
 export interface ServerContext {
@@ -225,7 +226,7 @@ export async function buildServer(opts: BuildServerOpts): Promise<FastifyInstanc
   });
 
   // ----- auth -----
-  // Every /v1 request needs a session cookie or bearer token, except a direct
+  // Every /v1 and /mcp request needs a session cookie or bearer token, except a direct
   // loopback connection when BOTNOTE_TRUST_LOCALHOST is on. Whether a request
   // is "loopback" is decided by the TCP peer address, never by headers: a LAN
   // client hitting a 0.0.0.0 bind gets the same gate as the public internet,
@@ -240,7 +241,8 @@ export async function buildServer(opts: BuildServerOpts): Promise<FastifyInstanc
   // connection or when auth is off: that is what attributes the write to a
   // named token ("Claude Code @ MacBook"). Only the 401 depends on auth.required.
   app.addHook("onRequest", async (req, reply) => {
-    if (!req.url.startsWith("/v1/")) return;
+    const mcp = isMcpPath(req.url);
+    if (!mcp && !req.url.startsWith("/v1/")) return;
     // The login endpoint is the entry point — gating it would be a
     // chicken-and-egg loop. Logout is fine to leave open too (it's a noop
     // when no cookie is present).
@@ -276,11 +278,19 @@ export async function buildServer(opts: BuildServerOpts): Promise<FastifyInstanc
       }
     }
 
+    if (mcp) {
+      return reply.code(401).send({
+        error: "unauthenticated",
+        message:
+          "Send a botnote API token as 'Authorization: Bearer <token>'. Create one in Settings -> API tokens."
+      });
+    }
     return reply.code(401).send({ error: "unauthenticated" });
   });
   app.log.info(describeAuthConfig(auth));
 
   await registerRoutes(app, { db: opts.db, embedding: opts.embedding, auth, defaultScope });
+  registerMcpRoute(app);
 
   const webDist = resolveWebDist(opts.webDist);
   if (webDist) {
@@ -319,6 +329,11 @@ export async function buildServer(opts: BuildServerOpts): Promise<FastifyInstanc
       if (
         url.startsWith("/v1") ||
         url.startsWith("/docs") ||
+        isMcpPath(url) ||
+        // MCP clients probe here for OAuth metadata. Answering with the SPA's
+        // index.html (200, text/html) makes them fail on a JSON parse instead
+        // of concluding there is no OAuth and using the bearer token.
+        url.startsWith("/.well-known/") ||
         url === "/health" ||
         url.startsWith("/health?") ||
         url.startsWith("/assets/")

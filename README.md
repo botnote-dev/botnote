@@ -18,7 +18,7 @@ Three things only:
 - Single multi-kind entity table — `task / note` discriminated by `kind` column.
 - Search: hybrid retrieval — tsvector BM25 + pgvector cosine + time decay, merged via Reciprocal Rank Fusion (k=60).
 - Embeddings: OpenAI `text-embedding-3-small` at 384 dimensions, written asynchronously. Falls back to BM25-only if no API key.
-- API: MCP server (stdio) + REST API (Fastify on `:4280`) over a shared service layer.
+- API: MCP server (Streamable HTTP at `/mcp` on the daemon, plus stdio via the CLI) + REST API (Fastify on `:4280`) over a shared service layer.
 - Every write records `actorKind` (human / agent / system); `idempotencyKey` is supported on writes.
 - All MCP tools carry `2025-03-26` annotations: `readOnlyHint`, `idempotentHint`, `destructiveHint`, `openWorldHint`.
 
@@ -32,7 +32,7 @@ This repository ships two npm packages:
 
 | Package | Contents | License |
 |---------|----------|---------|
-| [`botnote`](packages/cli) | CLI and MCP stdio server; talks to a daemon over HTTP | MIT |
+| [`botnote`](packages/cli) | CLI and MCP server (stdio, and the handler behind the daemon's `/mcp`); talks to a daemon over HTTP | MIT |
 | `botnote-server` | The daemon: REST API, web UI, Postgres storage, background jobs | AGPL-3.0-only |
 
 Client machines only need `botnote`. The machine that hosts your data runs
@@ -303,6 +303,34 @@ key is already taken, or children whose parent is missing are reported as
 conflicts and left out instead of aborting the import (the CLI exits 3 when
 there were any). Entities that arrive without a vector are re-embedded in the
 background. API tokens and the embedding API key are never exported.
+
+## Remote MCP
+
+The daemon serves MCP over Streamable HTTP at `/mcp`, so a client can connect
+to a daemon directly with nothing installed locally. Tool descriptions and
+server instructions come from the daemon, so they update when the daemon is
+deployed.
+
+Auth is the same as the REST API: an API token from Settings -> API tokens sent
+as `Authorization: Bearer <token>`. A client on the daemon's own machine needs
+no token while loopback is trusted.
+
+```bash
+# Claude Code, daemon on this machine
+claude mcp add --transport http botnote http://127.0.0.1:4280/mcp
+
+# Claude Code, remote daemon
+claude mcp add --transport http botnote https://botnote.example.com/mcp \
+  --header "Authorization: Bearer <token>"
+```
+
+For claude.ai or Claude Desktop, add a custom connector with the URL
+`https://<your-host>/mcp` and put the same `Authorization` header under
+Request headers. The daemon must be reachable over public HTTPS for that; how
+you expose it (reverse proxy, tunnel) is up to you. There is no OAuth flow.
+
+The endpoint is stateless and answers `POST` only. It carries tools and
+resources but no skills; the plugin below adds those.
 
 ## Plugin
 
