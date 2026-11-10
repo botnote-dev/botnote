@@ -38,10 +38,10 @@
     "access": "public"
   },
   "scripts": {
-    "dev": "tsx watch src/cli.ts",
+    "dev": "pnpm build:cli && tsx watch src/cli.ts",
     "start": "node dist/cli.js",
     "clean": "node -e \"require('node:fs').rmSync('dist',{recursive:true,force:true}); require('node:fs').rmSync('web/dist',{recursive:true,force:true})\"",
-    "build": "pnpm clean && pnpm --dir web build && pnpm build:server && pnpm build:cli",
+    "build": "pnpm clean && pnpm --dir web build && pnpm build:cli && pnpm build:server",
     "build:server": "node -e \"require('node:fs').rmSync('dist',{recursive:true,force:true})\" && tsc -p tsconfig.json && mkdir -p dist/db/migrations && cp -R src/db/migrations/. dist/db/migrations/ && chmod +x dist/cli.js",
     "build:cli": "pnpm --dir packages/cli build",
     "check:plugin-versions": "node scripts/check-plugin-versions.mjs",
@@ -51,7 +51,7 @@
     "bump:patch": "pnpm version patch",
     "bump:minor": "pnpm version minor",
     "bump:major": "pnpm version major",
-    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p packages/cli/tsconfig.json --noEmit",
+    "typecheck": "pnpm build:cli && tsc -p tsconfig.json --noEmit",
     "test": "vitest run --no-file-parallelism",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "tsx src/db/migrate.ts",
@@ -64,6 +64,7 @@
     "@fastify/static": "^9.1.3",
     "@fastify/swagger": "^9.7.0",
     "@fastify/swagger-ui": "^5.2.6",
+    "botnote": "workspace:*",
     "drizzle-orm": "^0.36.0",
     "fastify": "^5.0.0",
     "fastify-type-provider-zod": "^4.0.2",
@@ -73,7 +74,7 @@
     "zod": "^3.23.0"
   },
   "devDependencies": {
-    "@modelcontextprotocol/sdk": "^1.0.0",
+    "@modelcontextprotocol/sdk": "^1.29.0",
     "@types/node": "^22.0.0",
     "@types/pg": "^8.11.0",
     "drizzle-kit": "^0.28.0",

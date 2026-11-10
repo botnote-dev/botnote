@@ -31,8 +31,12 @@ botnote --help                                  # every command
 
 ## MCP
 
-`botnote mcp` runs the MCP server on stdio. The botnote plugins for Claude
-Code, Codex and Cursor start it for you; for any other MCP client:
+A botnote daemon already serves MCP over HTTP at `<daemon-url>/mcp`; clients
+that speak Streamable HTTP can connect there directly with an API token as a
+bearer header and need nothing from this package.
+
+`botnote mcp` runs the same server on stdio. The botnote plugins for Claude
+Code, Codex and Cursor start it for you; for any other stdio MCP client:
 
 ```json
 {

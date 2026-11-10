@@ -113,11 +113,14 @@ jobs:
             npm publish --access public
           fi
 
+      # The daemon depends on the CLI package as `workspace:*`. `npm publish`
+      # does not rewrite that protocol, so pin it to the version just published.
       - name: Publish botnote-server (daemon, AGPL-3.0-only)
         run: |
           spec="$(node -p 'const p = require("./package.json"); `${p.name}@${p.version}`')"
           if [ -n "$(npm view "$spec" version 2>/dev/null)" ]; then
             echo "$spec is already on npm; skipping"
           else
+            npm pkg set "dependencies.botnote=$(node -p 'require("./package.json").version')"
             npm publish --access public
           fi

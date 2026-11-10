@@ -137,5 +137,5 @@ export function isTrustedWithoutCredential(req: HeaderBag, cfg: AuthConfig): boo
 export function describeAuthConfig(cfg: AuthConfig): string {
   if (!cfg.required) return "auth: disabled (set BOTNOTE_REQUIRE_AUTH=1 or BOTNOTE_PASSWORD to enforce)";
   const local = cfg.trustLocalhost ? "loopback trusted without credential" : "loopback requires credential";
-  return `auth: required for /v1/* (cookie or bearer); ${local}; trusted proxies: ${cfg.trustedProxies.join(", ") || "none"}`;
+  return `auth: required for /v1/* and /mcp (cookie or bearer); ${local}; trusted proxies: ${cfg.trustedProxies.join(", ") || "none"}`;
 }

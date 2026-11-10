@@ -34,17 +34,20 @@ src/                # npm `botnote-server` (repo root package), AGPL-3.0-only
 web/                # web UI served by the daemon, AGPL-3.0-only, own lockfile
 packages/cli/       # npm `botnote`, MIT
   src/bin.ts        # `botnote` CLI; `serve` launches botnote-server
-  src/mcp/          # MCP stdio server — an HTTP client of the REST API
+  src/mcp/          # MCP server — an HTTP client of the REST API; stdio entry
+                    # plus the Streamable HTTP handler the daemon mounts at /mcp
 plugins/botnote/    # Claude Code / Codex / Cursor plugin + skills, MIT
 ```
 
 REST and MCP MUST share the service layer: MCP tools call the REST API, which
 calls `src/service/`. Do not duplicate business logic in either transport.
 
-NEVER import across the package boundary. `packages/cli/` must not import from
-`src/` and `src/` must not import from `packages/cli/`; MIT code that pulls in
-AGPL code stops being MIT-distributable. Shared constants (for example the
-default port) are duplicated on purpose and pinned equal by a test.
+The package boundary is one-way. `packages/cli/` MUST NOT import from `src/`:
+MIT code that pulls in AGPL code stops being MIT-distributable. The daemon may
+use the MIT package, but only as the npm dependency `botnote` through its
+public entry points (`botnote/mcp`), never by relative path into
+`packages/cli/`. Shared constants (for example the default port) are still
+duplicated on purpose and pinned equal by a test.
 
 ## Schema rules
 
@@ -70,6 +73,10 @@ default port) are duplicated on purpose and pinned equal by a test.
 - Tool descriptions are agent-facing. Keep them imperative, < 3 sentences.
 - Expose `opening_brief` as both a tool AND a resource. The resource is
   what gets auto-injected when an MCP client opens a session.
+- The daemon serves the same server at `/mcp` (Streamable HTTP, stateless).
+  `/mcp` goes through the same auth gate as `/v1`, and every REST call a tool
+  makes is replayed in-process with the caller's credentials and peer address.
+  NEVER give those inner calls an identity of their own.
 
 ## Testing
 

@@ -5,7 +5,7 @@ licenses. The license of a file is set by the directory it lives in.
 
 | Path | Ships as | License |
 |------|----------|---------|
-| `packages/cli/` | npm `botnote`: the CLI and the MCP stdio server | MIT, see [packages/cli/LICENSE](packages/cli/LICENSE) |
+| `packages/cli/` | npm `botnote`: the CLI and the MCP server (stdio entry and the HTTP handler the daemon mounts) | MIT, see [packages/cli/LICENSE](packages/cli/LICENSE) |
 | `plugins/` | Claude Code, Codex and Cursor plugin: skills, commands, agents, MCP wiring | MIT, see [plugins/botnote/LICENSE](plugins/botnote/LICENSE) |
 | `.claude-plugin/`, `.cursor-plugin/`, `.agents/` | Plugin marketplace manifests | MIT |
 | Everything else: `src/`, `web/`, `scripts/`, `tests/`, `docs/`, ... | npm `botnote-server`: the daemon, REST API and web UI | AGPL-3.0-only, see [LICENSE](LICENSE) |
@@ -23,9 +23,10 @@ licenses. The license of a file is set by the directory it lives in.
   AGPL-3.0 section 13 requires you to offer those users the complete source of
   your modified version under the same license.
 
-The two halves stay separate in code: `packages/cli/` never imports from
-`src/`, and the daemon never imports from `packages/cli/`. They share only the
-HTTP API.
+The boundary is one-way in code. `packages/cli/` never imports from `src/`, so
+the MIT package stays free of AGPL code. The daemon depends on the MIT package
+as an ordinary npm dependency (`botnote`) to serve MCP at `/mcp`; AGPL code
+using MIT code changes nothing about either license.
 
 ## History
 

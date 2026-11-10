@@ -404,3 +404,102 @@ describe("write attribution", () => {
     expect(brief.json().latestWorklog[0]).toMatchObject({ actor: { label: "auth-test" } });
   });
 });
+
+function mcpRequest(
+  remoteAddress: string,
+  headers: Record<string, string>,
+  tool: string,
+  args: Record<string, unknown>
+) {
+  return server.inject({
+    method: "POST",
+    url: "/mcp",
+    remoteAddress,
+    headers: { accept: "application/json, text/event-stream", ...headers },
+    payload: { jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: tool, arguments: args } }
+  });
+}
+
+function mcpResult(payload: string): { isError?: boolean; content: Array<{ text: string }> } {
+  return JSON.parse(payload).result;
+}
+
+describe("auth gate on /mcp (enforcing, loopback trusted)", () => {
+  it("rejects a LAN or proxied caller without a credential before any tool runs", async () => {
+    const lan = await mcpRequest(LAN_PEER, {}, "list_projects", {});
+    expect(lan.statusCode).toBe(401);
+    expect(lan.json().error).toBe("unauthenticated");
+
+    const forged = await mcpRequest(
+      LAN_PEER,
+      { "x-forwarded-for": "127.0.0.1", "cf-connecting-ip": "127.0.0.1" },
+      "list_projects",
+      {}
+    );
+    expect(forged.statusCode).toBe(401);
+
+    const proxied = await mcpRequest("127.0.0.1", { "cf-connecting-ip": PUBLIC_CLIENT }, "list_projects", {});
+    expect(proxied.statusCode).toBe(401);
+
+    const badToken = await mcpRequest(LAN_PEER, { authorization: "Bearer bn_not-a-token" }, "list_projects", {});
+    expect(badToken.statusCode).toBe(401);
+  });
+
+  it("runs tools for a bearer token from LAN and from behind the proxy", async () => {
+    const headers = { authorization: `Bearer ${bearer}` };
+    const lan = await mcpRequest(LAN_PEER, headers, "list_projects", {});
+    expect(lan.statusCode).toBe(200);
+    expect(mcpResult(lan.payload).isError).toBeFalsy();
+
+    const proxied = await mcpRequest(
+      "127.0.0.1",
+      { ...headers, "cf-connecting-ip": PUBLIC_CLIENT },
+      "list_projects",
+      {}
+    );
+    expect(proxied.statusCode).toBe(200);
+    expect(mcpResult(proxied.payload).isError).toBeFalsy();
+  });
+
+  it("attributes writes made through /mcp to the caller's token", async () => {
+    const project = await server.inject({
+      method: "POST",
+      url: "/v1/projects",
+      remoteAddress: "127.0.0.1",
+      payload: { key: "MCPH", name: "mcp http" }
+    });
+    const res = await mcpRequest(LAN_PEER, { authorization: `Bearer ${bearer}` }, "create_task", {
+      title: "Created over HTTP MCP",
+      projectId: project.json().id,
+      idempotencyKey: "mcp-http-attribution"
+    });
+    expect(res.statusCode).toBe(200);
+    const text = mcpResult(res.payload).content[0]!.text;
+    expect(text).toContain("MCPH-1");
+
+    const task = await server.inject({
+      method: "GET",
+      url: "/v1/projects/by-key/MCPH/entities/by-seq/1",
+      remoteAddress: "127.0.0.1"
+    });
+    expect(task.json()).toMatchObject({ actorTokenId: bearerTokenId, actor: { label: "auth-test" } });
+  });
+
+  it("lets a direct loopback caller through without a credential", async () => {
+    const res = await mcpRequest("127.0.0.1", {}, "list_projects", {});
+    expect(res.statusCode).toBe(200);
+    expect(mcpResult(res.payload).isError).toBeFalsy();
+  });
+
+  it("answers non-POST methods with 405 and never serves the SPA for OAuth discovery", async () => {
+    const get = await server.inject({ method: "GET", url: "/mcp", remoteAddress: "127.0.0.1" });
+    expect(get.statusCode).toBe(405);
+    const discovery = await server.inject({
+      method: "GET",
+      url: "/.well-known/oauth-authorization-server",
+      remoteAddress: LAN_PEER
+    });
+    expect(discovery.statusCode).toBe(404);
+    expect(discovery.headers["content-type"]).toContain("application/json");
+  });
+});

@@ -21,6 +21,9 @@ export interface HttpClientOptions {
   cfAccessClientId?: string;
   cfAccessClientSecret?: string;
   version?: string;
+  /** Replaces global fetch. The daemon's own /mcp endpoint routes requests
+   *  back into itself in-process instead of over the network. */
+  fetch?: typeof fetch;
 }
 
 export class BotnoteHttpError extends Error {
@@ -68,7 +71,7 @@ export class BotnoteHttpClient {
 
     let res: Response;
     try {
-      res = await fetch(url.toString(), {
+      res = await (this.opts.fetch ?? fetch)(url.toString(), {
         method,
         headers,
         body: body === undefined ? undefined : JSON.stringify(body)
