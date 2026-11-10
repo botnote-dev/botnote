@@ -1,7 +1,7 @@
 {
   "name": "botnote",
   "displayName": "botnote",
-  "version": "0.2.24",
+  "version": "0.2.25",
   "description": "Notion for bots — capture + recall + project context for AI agents. Plugin connects to your botnote daemon's MCP endpoint and adds /today, /show-todo, /remember, /recall, /add-task, /start-work, /done slash commands and a curator subagent.",
   "author": {
     "name": "Jianhua Wang"
