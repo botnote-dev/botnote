@@ -82,9 +82,10 @@ right. If the proxy runs on another machine, list its address in
 `BOTNOTE_TRUST_PROXY`; otherwise its forwarded headers are ignored and rate
 limiting keys on the proxy itself.
 
-The Claude Code, Codex, and Cursor plugins call `botnote mcp`, so installing
-the `botnote` npm package is enough for plugin runtime on machines that do not
-have a botnote source checkout.
+The Codex and Cursor plugins call `botnote mcp`, so installing the `botnote`
+npm package is enough for plugin runtime on machines that do not have a botnote
+source checkout. The Claude Code plugin connects to the daemon's `/mcp`
+endpoint directly and needs nothing installed.
 
 ### CLI commands
 
@@ -338,7 +339,7 @@ The plugin bundles the MCP server, workflow skills/commands, and a curator
 subagent. All workflows route through MCP, so no separate task or memory MCP
 setup is required.
 
-Prefer the plugin installs below: they bundle MCP wiring (URL/token prompts)
+Prefer the plugin installs below: they bundle MCP wiring
 and skills in one step. The skills CLI at the end of this section is a
 skills-only fallback for agents without a plugin system.
 
@@ -368,10 +369,17 @@ Slash commands:
 ```
 
 Plugin distribution lives at
-[botnote-dev/botnote](https://github.com/botnote-dev/botnote). The MCP server
-inside the plugin uses the URL + token from the install prompt. A global
-`botnote` CLI install is optional: the plugin runs `npx -y botnote@<plugin-version> mcp`
-when no matching local CLI is available.
+[botnote-dev/botnote](https://github.com/botnote-dev/botnote). The Claude Code
+plugin runs no local MCP process: it connects to `<daemon URL>/mcp` with the
+URL and token from the install prompt (`/plugin configure botnote` to change
+them). Leave the URL at its default for a daemon on this machine; for any
+other daemon enter its base URL without a trailing slash and an API token.
+Neither Node nor the `botnote` CLI is needed on the client.
+
+Upgrading from 0.2.24 or earlier: those versions also read the URL and token
+that `botnote login` saved in `~/.config/botnote/config.json`. The plugin no
+longer does, so if you relied on that for a remote daemon, enter both in the
+plugin options.
 
 ### Codex
 

@@ -1,13 +1,10 @@
 {
   "mcpServers": {
     "botnote": {
-      "command": "bash",
-      "args": [
-        "${CLAUDE_PLUGIN_ROOT}/scripts/run-mcp.sh"
-      ],
-      "env": {
-        "BOTNOTE_URL": "${user_config.botnote_url}",
-        "BOTNOTE_TOKEN": "${user_config.botnote_token}"
+      "type": "http",
+      "url": "${user_config.botnote_url}/mcp",
+      "headers": {
+        "Authorization": "Bearer ${user_config.botnote_token}"
       }
     }
   }
