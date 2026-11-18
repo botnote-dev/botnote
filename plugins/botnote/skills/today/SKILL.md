@@ -11,6 +11,6 @@ When invoked:
 
 3. After the brief, add a single line if a task or project looks worth opening, suggesting `/start-work <TASK-KEY>` to pick up a task or `/start-work <PROJECT-KEY>` for project context.
 
-4. If the user continues into project work, use recall/search for prior context and remember durable decisions, gotchas, and handoff notes as the work progresses.
+4. If the user continues into project work, use recall/search for prior context, remember conclusions (decisions, preferences, gotchas) as they are drawn, and record what happened on the task with add_worklog when pausing.
 
 5. Do not call other tools unless the user follows up. The brief is the deliverable.

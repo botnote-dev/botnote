@@ -1,6 +1,6 @@
 ---
 name: remember
-description: Capture a free-form note into botnote. Use whenever the user says "remember X", "store this", "save this for later", or otherwise indicates something should be persisted.
+description: Store a memory in botnote — a conclusion to apply again: a decision and its reason, a preference, a gotcha, a convention. Use whenever the user says "remember X", "store this", "save this for later", or states a decision or preference. A record of what happened on a task goes to its worklog instead.
 ---
 
 When the user wants to remember something:
@@ -11,12 +11,14 @@ When the user wants to remember something:
    - `tags`: short kebab-case strings inferred from the content, usually 2-4 tags.
    - `projectId`: include only if the user explicitly mentioned a project or it is clear from the current context.
    - `pinned`: `true` only when the user says this should be pinned, always shown, or treated as must-read project context.
-   - `parentId`: include when the note is a follow-up on a specific task.
+   - `parentId`: the task this memory came out of, if any. It records the source; the memory still applies beyond that task.
 
 2. Report back in one line:
 
 ```text
-Remembered note/<id8>: <displayTitle>
+Remembered <ref>: <displayTitle>
 ```
+
+`<ref>` is the KEY-SEQ (or short id) the tool returned.
 
 Do not call `mcp__botnote__remember` multiple times for one piece of content. If the user dictates several distinct items in one message, ask whether they want one combined note or one note per item.

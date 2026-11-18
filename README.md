@@ -1,6 +1,6 @@
 # botnote
 
-Notion for bots. A single binary that stores projects, tasks, notes, and agent memory — and exposes them to AI agents via MCP and REST.
+Notion for bots. A single binary that stores projects, tasks, worklogs, and agent memory — and exposes them to AI agents via MCP and REST.
 
 ## Why
 
@@ -9,8 +9,22 @@ Agents work best with one stable, queryable, write-friendly source of truth — 
 Three things only:
 
 1. **Project management** — projects and tasks with status, priority, due dates, and stable identifiers.
-2. **Note-taking** — free-form Markdown notes, tagged, searchable, and optionally pinned.
-3. **Memory for agents** — hybrid retrieval (BM25 + vector + time decay), opening brief auto-bundles AGENTS.md + recent context.
+2. **Memory** — Markdown notes holding conclusions to apply again: decisions and their reasons, preferences, gotchas, conventions. Project-level or workspace-wide. Tagged, optionally pinned, found by hybrid retrieval (BM25 + vector + time decay).
+3. **Worklog** — append-only progress entries on a task: what was done, what's next, what's blocking. The opening brief bundles AGENTS.md, pinned memory, open tasks, and the latest worklog of each in-progress task, so the next session resumes where the last one stopped.
+
+### Worklog or memory?
+
+Ask: is this a record of what happened, or a conclusion about what to do next time?
+
+| | Worklog | Memory |
+|---|---|---|
+| Is | A record: what happened | A conclusion: what to do next time |
+| Written as | Chronological events — "tried A, it failed, switched to B" | A rule you can apply directly — "use B here, because A …" |
+| Level | One task | A project, or the whole workspace |
+| Like | A diary, `git log` | A wiki, a README |
+| Example | "Added a Stop hook that forced a feedback turn; it interrupted sessions, removed in 358c6f9" | "botnote hooks only do side effects; they never block the model" |
+
+Memory is distilled from worklog. Worklog stays searchable, so "how was this done before?" is answered from it; when the same lesson keeps coming up, write it down once as a memory. A memory drawn while working on a task cites that task as its source but does not belong to it. In the API and MCP tools memory is stored as `kind = note` and written with `remember`; worklog entries use `add_worklog`.
 
 ## Design
 
