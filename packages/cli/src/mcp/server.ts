@@ -297,12 +297,11 @@ References:
 - Refer to tasks and notes by their KEY-SEQ identifier (e.g. BOT-55) when talking to the user, never by UUID.
 - The task status value \`rejected\` means cancelled. Say "cancelled" / "cancel" when talking to the user, never "rejected" / "reject".
 
-Worklog:
-- When pausing or finishing work on a task, record progress with add_worklog (what was done, what's next, blockers). The opening brief surfaces the latest worklog entry per in_progress task, so this is how the next session resumes.
-
-Memory hygiene:
-- When a stored fact becomes outdated (changed decision, corrected detail), remember the new fact with supersedes=<old note id> instead of leaving both or editing history away. Superseded notes are downweighted in search but stay readable.
-- If remember reports similar existing notes, check them before piling on duplicates — supersede or update instead.
+Worklog vs memory — ask "is this a record of what happened, or a conclusion about what to do next time?":
+- Record → worklog (add_worklog on the task): what was done, what's next, blockers. Task-level, chronological. The opening brief shows the latest entry per in_progress task, so write one when pausing or finishing work.
+- Conclusion → memory (remember): a rule, decision and its reason, user preference, gotcha, or convention you would apply again. Project-level or wider. Write it the moment you draw it, not only at the end. If it came out of a task, pass that task as parentId (its source); the memory still stands on its own.
+- Worklog stays searchable, so "how was X done before?" is answered from it. When the same lesson keeps coming up there, distill it into a memory.
+- When a memory becomes outdated, remember the new fact with supersedes=<old note id> instead of leaving both. If remember reports similar notes, supersede or update instead of duplicating.
 
 Product feedback:
 - When botnote ITSELF gets in your way — a tool misbehaves, a capability is missing, a workflow is awkward — file it with submit_feedback (category: bug/feature/friction/idea). Do not create tasks in the user's projects for botnote product issues, and check list_feedback first to avoid duplicates.
@@ -748,7 +747,7 @@ export function buildMcpServer(ctx: McpServerContext): McpServer {
     {
       title: "Create Task",
       description:
-        "Create a task — a structured work item with status, optional due date, priority, and tags. Use this for anything with a state machine (open/in_progress/done). For free-form notes call `remember`. Call it proactively — when the user asks for work that has no task yet, or a follow-up surfaces mid-task — without waiting to be asked.\n" +
+        "Create a task — a structured work item with status, optional due date, priority, and tags. Use this for anything with a state machine (open/in_progress/done). For conclusions to reuse (decisions, preferences, gotchas) call `remember`; for a record of progress on a task call `add_worklog`. Call it proactively — when the user asks for work that has no task yet, or a follow-up surfaces mid-task — without waiting to be asked.\n" +
         "\n" +
         "Conventions (follow strictly):\n" +
         "- `projectId`: required. Call `list_projects` first if you don't already know the project's UUID. If user-supplied context doesn't pin a project, ask before creating.\n" +
@@ -823,18 +822,17 @@ export function buildMcpServer(ctx: McpServerContext): McpServer {
     {
       title: "Remember (Create Note)",
       description:
-        "Capture a free-form note. Title is optional (body's first line acts as label). Notes are botnote's memory layer, so err on the side of preserving useful context.\n" +
+        "Store a memory: a conclusion you would apply again — a rule, a decision and its reason, a user preference, a gotcha, a convention. Project-level or wider. A record of what happened on a task (done / next / blocked) goes to `add_worklog` instead.\n" +
         "\n" +
         "Conventions:\n" +
-        "- `body`: the substance. Multi-line + markdown OK. Include the WHY, not just the WHAT.\n" +
-        "- `title`: skip if the first body line is descriptive. Provide when the body is long-form.\n" +
-        "- `tags`: 2-4 short lowercase kebab-case tokens inferred from content. Re-use existing tags — recall similar memories first if unsure of vocabulary.\n" +
-        "- `projectId`: pick the most specific project. If unclear, omit (workspace-scope is fine; better than wrong-project).\n" +
-        "- `parentId`: pass a task's UUID when the note is a follow-up on a specific task — this surfaces the note when the task is opened.\n" +
-        "- `pinned=true`: ONLY for must-read context (deployment steps, hidden gotchas, AGENTS-style conventions). Pinned notes appear in every future opening_brief — abuse them and the brief becomes noise.\n" +
-        "- `supersedes`: pass an existing note's id when this note REPLACES an outdated memory (changed decision, corrected fact). The old note is downweighted in search but stays readable — prefer this over editing history away.\n" +
+        "- `body`: the fact, with the WHY. Markdown OK. `title` only when the body is long-form.\n" +
+        "- `tags`: 2-4 short lowercase kebab-case tokens; re-use existing ones.\n" +
+        "- `projectId`: the most specific project; omit if unclear (workspace scope beats the wrong project).\n" +
+        "- `parentId`: the task this memory came out of, if any. It records the source and shows the memory on that task; the memory still applies beyond it.\n" +
+        "- `pinned=true`: ONLY for must-read context (deploy steps, hidden gotchas, conventions). Pinned memories appear in every opening_brief.\n" +
+        "- `supersedes`: the id of an outdated memory this one replaces. The old one is downweighted in search but stays readable.\n" +
         "\n" +
-        "The result may list `similar existing notes` — near-duplicates already stored. If one of them covers the same fact, mark it superseded via `link` (from=new note, to=old note, kind='supersedes') or update the existing note instead of keeping both.",
+        "If the result lists similar existing notes, supersede or update one of them instead of keeping duplicates.",
       annotations: {
         readOnlyHint: false,
         destructiveHint: false,
@@ -846,7 +844,7 @@ export function buildMcpServer(ctx: McpServerContext): McpServer {
         title: z.string().max(500).optional().describe("Optional; first body line is used as fallback."),
         body: z.string().default(""),
         tags: z.array(z.string()).default([]),
-        parentId: EntityRef.optional().describe("Link this note under a task or other entity. Accepts UUID, UUID prefix, or KEY-SEQ such as BOT-55."),
+        parentId: EntityRef.optional().describe("Source task this memory came out of. Accepts UUID, UUID prefix, or KEY-SEQ such as BOT-55."),
         actorKind: z.enum(ACTOR_KINDS).default("agent"),
         pinned: z.boolean().default(false).describe("Pin to project opening brief (must-read context)."),
         supersedes: EntityRef.optional().describe("Existing note this one replaces. Accepts UUID, UUID prefix, or KEY-SEQ such as BOT-55. The old note is downweighted in search."),
@@ -1006,7 +1004,7 @@ export function buildMcpServer(ctx: McpServerContext): McpServer {
     {
       title: "Add Worklog Entry",
       description:
-        "Append a worklog entry to a task or note. Use it to record progress, decisions, blockers, or a handoff summary when pausing work — the opening brief shows the latest entry for every in_progress task. Entries are append-only.",
+        "Append a worklog entry to a task: what was done, what's next, what's blocking. Write one when pausing or finishing work — the opening brief shows the latest entry per in_progress task, so this is how the next session resumes. A conclusion drawn from the work (a rule, decision, or gotcha to apply next time) goes to `remember` instead.",
       annotations: {
         readOnlyHint: false,
         destructiveHint: false,

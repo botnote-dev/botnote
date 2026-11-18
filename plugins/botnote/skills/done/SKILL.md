@@ -23,9 +23,9 @@ When the user signals something is finished:
    - If the task is recurring, completing it may generate the next occurrence. When recurrence matters to the user's next step, call `mcp__botnote__get_recurrence` after completion and mention the next due date if one exists.
 
 4. Write a closing worklog entry with `mcp__botnote__add_worklog` on the task:
-   - `body`: 1-3 sentences — what was done, how it was verified, and any gotchas.
+   - `body`: 1-3 sentences — what was done and how it was verified.
    - Skip only when the user said a bare "done" with no detail and the work itself happened outside this session.
-   - For durable knowledge that outlives this task (decisions, conventions, gotchas future agents need without opening this task), additionally call `mcp__botnote__remember` with `parentId` set to the task.
+   - The worklog is the record. Any conclusion drawn from the work (a rule, a decision and its reason, a gotcha, a user preference, a convention to apply next time) is memory, not worklog: also call `mcp__botnote__remember` with `parentId` set to the task as its source.
 
 5. Capture follow-ups. Look back over the work: bugs found, items deferred as "later", next steps the user mentioned, or anything left out of scope. Create a task for each one not already tracked, with `parentId` set to the finished task, and list them in the confirmation. If there are none, skip this step silently.
 
@@ -37,4 +37,4 @@ When the user signals something is finished:
 Marked BOT-42 done: <title>
 ```
 
-If a worklog entry, note, or follow-up task was captured, mention it briefly (for example `Follow-ups: BOT-43, BOT-44`).
+If a worklog entry, memory, or follow-up task was captured, mention it briefly (for example `Follow-ups: BOT-43, BOT-44`).

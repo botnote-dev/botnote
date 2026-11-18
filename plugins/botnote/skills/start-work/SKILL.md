@@ -39,8 +39,8 @@ Argument: `<task-key-or-project-key>`.
 
 6. Treat botnote as working memory while doing the work.
    - Use `mcp__botnote__search` or `/botnote:recall` when prior decisions, related notes, similar tasks, or missing context could matter.
-   - Use `mcp__botnote__remember` or `/botnote:remember` to preserve durable decisions, gotchas, useful findings, handoff notes, and final summaries.
-   - When pausing work on the task (session ending, switching focus, blocked), record a worklog entry with `mcp__botnote__add_worklog`: what was done, what's next, and any blockers. This is what the next session resumes from.
+   - Memory (`mcp__botnote__remember` or `/botnote:remember`) is for conclusions you would apply again: a decision and its reason, a user preference, a gotcha, a convention. Project-level or wider. Store it when you draw it, with `parentId` set to this task as its source.
+   - Worklog (`mcp__botnote__add_worklog`) is the record of what happened on this task: what was done, what's next, and any blockers. Write one when pausing (session ending, switching focus, blocked); the next session resumes from it.
    - When new work emerges that is outside the current task's scope (a discovered bug, a follow-up, a deferred "later" item), create a task for it right away with `mcp__botnote__create_task` and `parentId` set to the current task, then mention it in one line (`Added BOT-56: <title>`). Do not silently do it or let it drop. Ask first only when it belongs to a different, unclear project.
    - If the work turns out bigger than one focused session, split it: keep the current task as the parent and create small subtasks under it.
 

@@ -22,7 +22,7 @@ Scan the recent conversation transcript and identify what's worth remembering lo
 
 ## What NOT to capture
 
-- Step-by-step execution logs — those go in commit messages.
+- Records of what happened (what was done, what's next) — those belong in the task's worklog or commit messages, not in memory. Test: is it a record of what happened, or a conclusion about what to do next time? Only conclusions are memory.
 - Things already in CLAUDE.md, AGENTS.md, or a pinned note (check first).
 - Generic programming knowledge.
 - Bug fixes whose details are already in the commit / PR.
@@ -43,6 +43,7 @@ Scan the recent conversation transcript and identify what's worth remembering lo
      - `body`: 2-5 sentences capturing the substance.
      - `tags`: 2-4 short kebab-case tags.
      - `projectId`: if the topic is project-specific.
+     - `parentId`: the task it came out of, if the session was working on one.
      - `pinned`: only if explicitly marked as "must-read for the next session".
 
 5. Final report: one paragraph summarizing what was captured (with the new note ids).
