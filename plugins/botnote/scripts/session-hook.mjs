@@ -1,6 +1,12 @@
 #!/usr/bin/env node
 // Claude Code hooks for botnote. Usage: session-hook.mjs <post-tool-use|stop|user-prompt-submit>
 //
+// `stop` hands the event to a detached `stop-worker` child and returns at
+// once. An async hook would be simpler, but Claude Code cancels async hooks
+// still running when a `claude -p` session exits, so headless sessions would
+// never get a snapshot; a detached child outlives the session and the hook
+// still costs the user no waiting.
+//
 // None of these hooks block, force a turn, or call a model. They track which
 // botnote task this session works on (post-tool-use), keep one overwritten
 // session snapshot on that task (stop), and print a one-line reminder only
@@ -8,7 +14,7 @@
 // (user-prompt-submit). Any failure exits 0 silently: a hook must never get in
 // the way of the session.
 
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawn } from "node:child_process";
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
@@ -158,6 +164,25 @@ function changedFiles(cwd) {
   }
 }
 
+function handOffStop(event) {
+  const file = join(stateDir(), `stop-${process.pid}-${Date.now()}.json`);
+  writeFileSync(file, JSON.stringify(event));
+  spawn(process.execPath, [process.argv[1], "stop-worker", file], {
+    detached: true,
+    stdio: "ignore"
+  }).unref();
+}
+
+async function onStopWorker(file) {
+  let event;
+  try {
+    event = JSON.parse(readFileSync(file, "utf8"));
+  } finally {
+    rmSync(file, { force: true });
+  }
+  if (event?.session_id) await onStop(event);
+}
+
 async function onStop(event) {
   const state = loadState(event.session_id);
   pruneOldState();
@@ -199,11 +224,12 @@ function onUserPromptSubmit(event) {
 }
 
 async function main() {
+  const kind = process.argv[2];
+  if (kind === "stop-worker") return onStopWorker(process.argv[3]);
   const event = readStdin();
   if (!event?.session_id) return;
-  const kind = process.argv[2];
   if (kind === "post-tool-use") onPostToolUse(event);
-  else if (kind === "stop") await onStop(event);
+  else if (kind === "stop") handOffStop(event);
   else if (kind === "user-prompt-submit") onUserPromptSubmit(event);
 }
 
