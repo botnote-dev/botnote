@@ -403,7 +403,7 @@ session, forces an extra turn, or calls a model:
 | Hook | What it does | Tokens |
 |---|---|---|
 | `PostToolUse` (botnote tools only) | Remembers which task this session works on: the task an agent starts (`in_progress`), resumes (`list_worklog`), or logs to | none |
-| `Stop` (async) | Replaces that task's session snapshot — the agent's last message and `git diff --stat` — via `PUT /v1/tasks/:ref/session-snapshot`. The snapshot is not a worklog entry; the opening brief shows it only when it is newer than the task's latest worklog | none |
+| `Stop` | Hands off to a detached background process (so it never delays the session and still runs after `claude -p` exits), which replaces that task's session snapshot — the agent's last message and `git diff --stat` — via `PUT /v1/tasks/:ref/session-snapshot`. The snapshot is not a worklog entry; the opening brief shows it only when it is newer than the task's latest worklog | none |
 | `UserPromptSubmit` | Adds one reminder line when the task has had no worklog entry for 8 prompts and 30 minutes, at most once per 30 minutes | a few, rarely |
 
 The hooks need `node` on `PATH` and do nothing without it. Session state

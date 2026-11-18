@@ -19,8 +19,7 @@
           {
             "type": "command",
             "command": "command -v node >/dev/null 2>&1 && node \"${CLAUDE_PLUGIN_ROOT}/scripts/session-hook.mjs\" stop || true",
-            "async": true,
-            "timeout": 15
+            "timeout": 10
           }
         ]
       }
