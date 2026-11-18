@@ -1,6 +1,6 @@
 {
   "name": "botnote",
-  "version": "0.2.26",
+  "version": "0.2.27",
   "description": "Agent-native tasks, notes, memory, and project context for Codex.",
   "author": {
     "name": "Jianhua Wang"
