@@ -73,6 +73,7 @@ import {
   updateRecurrenceRule
 } from "../service/recurrence.js";
 import { listRevisions } from "../service/revisions.js";
+import { setSessionSnapshot } from "../service/session_snapshot.js";
 import { tasksRange } from "../service/tasks.js";
 import { exportWorkspace, importWorkspace } from "../service/transfer.js";
 import { createToken, listTokens, revokeToken, tokenLabels } from "../service/tokens.js";
@@ -84,6 +85,7 @@ import {
   CreateProjectInput,
   CreateTaskInput,
   CreateWorklogEntryInput,
+  SessionSnapshotInput,
   CreateTokenInput,
   EmbeddingBackfillInput,
   GetLinksInput,
@@ -124,6 +126,9 @@ const IdParams = z.object({ id: Uuid });
 const EntityIdRef = z.string().min(8).max(36).regex(/^[0-9a-fA-F-]+$/);
 const EntityIdParams = z.object({ id: EntityIdRef });
 const RuleIdParams = z.object({ id: Uuid });
+const TaskRefParams = z.object({
+  ref: z.string().min(3).max(60).regex(/^([0-9a-fA-F-]{8,36}|[A-Z][A-Z0-9_]*-\d+)$/)
+});
 const KeyParams = z.object({ key: z.string() });
 const BooleanQuery = z.preprocess((value) => {
   if (value === undefined) return undefined;
@@ -881,6 +886,28 @@ export async function registerRoutes(
       }
     );
   }
+
+  app.put(
+    "/v1/tasks/:ref/session-snapshot",
+    {
+      schema: {
+        tags: ["entities"],
+        summary: "Replace the latest coding-agent session snapshot on a task",
+        description:
+          "Written by client hooks, not by agents. One snapshot per task; each write replaces the last. The opening brief shows it when it is newer than the task's latest worklog entry.",
+        params: TaskRefParams,
+        body: SessionSnapshotInput
+      }
+    },
+    async (req) => {
+      const { ref } = TaskRefParams.parse(req.params);
+      const body = SessionSnapshotInput.parse(req.body);
+      const entity = await setSessionSnapshot(req.scope, ctx.db, ref, body, {
+        actorTokenId: req.actorTokenId
+      });
+      return serializeEntity(entity);
+    }
+  );
 
   app.get(
     "/v1/okr",

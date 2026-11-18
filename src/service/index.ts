@@ -9,3 +9,4 @@ export * as tasksService from "./tasks.js";
 export { EmbeddingService, EMBED_DIM, EMBED_MODEL } from "./embedding.js";
 export type { EmbedFn } from "./embedding.js";
 export * as embeddingSettingsService from "./embedding_settings.js";
+export * as sessionSnapshotService from "./session_snapshot.js";
