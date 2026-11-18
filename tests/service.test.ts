@@ -32,6 +32,7 @@ import { listRevisions, REVISION_RETENTION } from "../src/service/revisions.js";
 import { createSession, pruneExpiredSessions } from "../src/service/sessions.js";
 import { sessions } from "../src/db/schema.js";
 import { formatOpeningBrief, openingBrief } from "../src/service/opening_brief.js";
+import { readSessionSnapshot, setSessionSnapshot } from "../src/service/session_snapshot.js";
 import {
   createProject,
   getProjectByKey,
@@ -1969,6 +1970,86 @@ describe("botnote service", () => {
     expect(formatted).toContain("↳ last log");
     expect(formatted).toContain("by agent:");
     expect(formatted).toContain("stopped at the REST layer");
+  });
+
+  describe("session snapshot", () => {
+    async function inProgressTask(key: string) {
+      const p = await createProject(S, db, { key, name: `${key} Project` });
+      const task = await write(S, db, {
+        kind: "task",
+        projectId: p.id,
+        title: "Snapshot task",
+        body: "",
+        tags: [],
+        status: "in_progress",
+        actorKind: "human",
+        metadata: { keep: "me" }
+      });
+      return { p, task };
+    }
+
+    it("replaces the snapshot by KEY-SEQ and keeps other metadata", async () => {
+      const { task } = await inProgressTask("SNAP1");
+      await setSessionSnapshot(S, db, "SNAP1-1", {
+        sessionId: "s1",
+        client: "claude-code",
+        summary: "first",
+        changedFiles: "",
+        actorKind: "system"
+      });
+      const after = await setSessionSnapshot(S, db, task.id, {
+        sessionId: "s2",
+        client: "claude-code",
+        summary: "second",
+        changedFiles: " 2 files changed, 10 insertions(+)",
+        actorKind: "system"
+      });
+      const snap = readSessionSnapshot(after);
+      expect(snap?.sessionId).toBe("s2");
+      expect(snap?.summary).toBe("second");
+      expect((after.metadata as Record<string, unknown>).keep).toBe("me");
+      expect(await listRevisions(S, db, task.id)).toHaveLength(0);
+      expect(await listWorklog(S, db, task.id)).toHaveLength(0);
+    });
+
+    it("returns the stored snapshot unchanged for a repeated idempotency key", async () => {
+      const { task } = await inProgressTask("SNAP2");
+      const base = { sessionId: "s1", client: "claude-code", changedFiles: "", actorKind: "system" as const };
+      await setSessionSnapshot(S, db, task.id, { ...base, summary: "original", idempotencyKey: "k1" });
+      const again = await setSessionSnapshot(S, db, task.id, { ...base, summary: "retry", idempotencyKey: "k1" });
+      expect(readSessionSnapshot(again)?.summary).toBe("original");
+    });
+
+    it("refuses non-task entities and unknown tasks", async () => {
+      const note = await write(S, db, {
+        kind: "note",
+        title: "A memory",
+        body: "",
+        tags: [],
+        status: "open",
+        actorKind: "human",
+        metadata: {}
+      });
+      const input = { sessionId: "s", client: "x", summary: "", changedFiles: "", actorKind: "system" as const };
+      await expect(setSessionSnapshot(S, db, note.id, input)).rejects.toThrow(/tasks only/);
+      await expect(setSessionSnapshot(S, db, "NOPE-99", input)).rejects.toThrow(/not found/);
+    });
+
+    it("shows in the brief only when newer than the latest worklog entry", async () => {
+      const { p, task } = await inProgressTask("SNAP3");
+      await addWorklogEntry(S, db, task.id, { body: "Written log.", actorKind: "agent", metadata: {} });
+      const base = { sessionId: "s1", client: "claude-code", changedFiles: " 1 file changed", actorKind: "system" as const };
+
+      await setSessionSnapshot(S, db, task.id, { ...base, summary: "stale", at: new Date(Date.now() - 3600_000) });
+      let text = formatOpeningBrief(await openingBrief(S, db, { projectId: p.id, recentLimit: 5 }));
+      expect(text).not.toContain("auto-captured");
+
+      await setSessionSnapshot(S, db, task.id, { ...base, summary: "kept going after the log", at: new Date(Date.now() + 60_000) });
+      text = formatOpeningBrief(await openingBrief(S, db, { projectId: p.id, recentLimit: 5 }));
+      expect(text).toContain("auto-captured");
+      expect(text).toContain("kept going after the log");
+      expect(text).toContain("[1 file changed]");
+    });
   });
 
   it("stores the token behind a write and keeps the row when the token is revoked", async () => {

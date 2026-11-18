@@ -5,6 +5,7 @@ import { blockersFor, type Blocker } from "./blockers.js";
 import { briefOkr, type BriefOkr } from "./okr.js";
 import { getProject } from "./projects.js";
 import type { Scope } from "./scope.js";
+import { readSessionSnapshot } from "./session_snapshot.js";
 import { tokenLabels } from "./tokens.js";
 import { DEFAULT_WORKSPACE_TIMEZONE, getWorkspaceSettings } from "./workspace_settings.js";
 import type { OpeningBriefInput } from "./types.js";
@@ -28,6 +29,20 @@ export interface OpeningBrief {
   actorLabels: Record<string, string>;
   generatedAt: Date;
   timezone: string;
+}
+
+function formatSnapshot(snap: NonNullable<ReturnType<typeof readSessionSnapshot>>): string {
+  const when = snap.at.slice(0, 16).replace("T", " ");
+  const summary = snap.summary.trim().replace(/\s+/g, " ");
+  let line = `session activity after the last log, ${when} (${snap.client}, auto-captured)`;
+  if (summary) line += `: ${summary.length > 300 ? `${summary.slice(0, 300)}…` : summary}`;
+  const filesLine = snap.changedFiles
+    .split("\n")
+    .map((l) => l.trim())
+    .filter((l) => /\b(changed|untracked)\b/.test(l))
+    .join("; ");
+  if (filesLine) line += ` [${filesLine}]`;
+  return line;
 }
 
 export async function openingBrief(
@@ -296,6 +311,10 @@ export function formatOpeningBrief(brief: OpeningBrief): string {
         lines.push(
           `  ↳ last log ${when} by ${who}: ${excerpt.length > 300 ? `${excerpt.slice(0, 300)}…` : excerpt}`
         );
+      }
+      const snap = readSessionSnapshot(t);
+      if (snap && (!log || new Date(snap.at).getTime() > log.createdAt.getTime())) {
+        lines.push(`  ↳ ${formatSnapshot(snap)}`);
       }
     }
     lines.push("");

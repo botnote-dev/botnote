@@ -222,6 +222,42 @@ describe("botnote E2E cross-transport", () => {
     expect(archived.archivedAt).toBeTruthy();
   });
 
+  it("REST replaces a task's session snapshot by KEY-SEQ", async () => {
+    const projectResp = await fetch(`${baseUrl}/v1/projects`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ key: "SNPE", name: "Snapshot E2E" })
+    });
+    const project = (await projectResp.json()) as { id: string };
+    const taskResp = await fetch(`${baseUrl}/v1/tasks`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ projectId: project.id, title: "Hooked task", status: "in_progress" })
+    });
+    expect(taskResp.ok).toBe(true);
+
+    for (const summary of ["first turn", "second turn"]) {
+      const resp = await fetch(`${baseUrl}/v1/tasks/SNPE-1/session-snapshot`, {
+        method: "PUT",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ sessionId: "sess-1", client: "claude-code", summary })
+      });
+      expect(resp.ok).toBe(true);
+    }
+    const task = (await (
+      await fetch(`${baseUrl}/v1/projects/by-key/SNPE/entities/by-seq/1`)
+    ).json()) as { metadata: { sessionSnapshot?: { summary: string; actorKind: string } } };
+    expect(task.metadata.sessionSnapshot?.summary).toBe("second turn");
+    expect(task.metadata.sessionSnapshot?.actorKind).toBe("system");
+
+    const missing = await fetch(`${baseUrl}/v1/tasks/SNPE-99/session-snapshot`, {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ sessionId: "sess-1" })
+    });
+    expect(missing.status).toBe(404);
+  });
+
   it("REST recurrence completion creates the next occurrence", async () => {
     const projectResp = await fetch(`${baseUrl}/v1/projects`, {
       method: "POST",

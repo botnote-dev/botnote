@@ -388,12 +388,27 @@ plugin runs no local MCP process: it connects to `<daemon URL>/mcp` with the
 URL and token from the install prompt (`/plugin configure botnote` to change
 them). Leave the URL at its default for a daemon on this machine; for any
 other daemon enter its base URL without a trailing slash and an API token.
-Neither Node nor the `botnote` CLI is needed on the client.
+Neither Node nor the `botnote` CLI is needed on the client (the optional session hooks below use Node when it is there).
 
 Upgrading from 0.2.24 or earlier: those versions also read the URL and token
 that `botnote login` saved in `~/.config/botnote/config.json`. The plugin no
 longer does, so if you relied on that for a remote daemon, enter both in the
 plugin options.
+
+#### Session hooks
+
+The Claude Code plugin also ships three hooks. None of them blocks the
+session, forces an extra turn, or calls a model:
+
+| Hook | What it does | Tokens |
+|---|---|---|
+| `PostToolUse` (botnote tools only) | Remembers which task this session works on: the task an agent starts (`in_progress`), resumes (`list_worklog`), or logs to | none |
+| `Stop` (async) | Replaces that task's session snapshot — the agent's last message and `git diff --stat` — via `PUT /v1/tasks/:ref/session-snapshot`. The snapshot is not a worklog entry; the opening brief shows it only when it is newer than the task's latest worklog | none |
+| `UserPromptSubmit` | Adds one reminder line when the task has had no worklog entry for 8 prompts and 30 minutes, at most once per 30 minutes | a few, rarely |
+
+The hooks need `node` on `PATH` and do nothing without it. Session state
+lives in the plugin data directory. Tune the reminder with
+`BOTNOTE_NUDGE_PROMPTS` and `BOTNOTE_NUDGE_MINUTES`.
 
 ### Codex
 

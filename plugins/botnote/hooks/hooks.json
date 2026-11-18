@@ -1,0 +1,40 @@
+{
+  "description": "botnote session tracking: remembers which botnote task this session works on, keeps one auto-captured session snapshot on it, and reminds the agent to write a worklog only after a long stretch without one. Never blocks the session.",
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "mcp__plugin_botnote_botnote__.*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "command -v node >/dev/null 2>&1 && node \"${CLAUDE_PLUGIN_ROOT}/scripts/session-hook.mjs\" post-tool-use || true",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "command -v node >/dev/null 2>&1 && node \"${CLAUDE_PLUGIN_ROOT}/scripts/session-hook.mjs\" stop || true",
+            "async": true,
+            "timeout": 15
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "command -v node >/dev/null 2>&1 && node \"${CLAUDE_PLUGIN_ROOT}/scripts/session-hook.mjs\" user-prompt-submit || true",
+            "timeout": 10
+          }
+        ]
+      }
+    ]
+  }
+}

@@ -111,6 +111,20 @@ export const CreateWorklogEntryInput = z.object({
 });
 export type CreateWorklogEntryInput = z.infer<typeof CreateWorklogEntryInput>;
 
+/** The latest coding-agent session activity on a task, captured mechanically
+ *  by a client hook. One per task: each write replaces the previous one. */
+export const SessionSnapshotInput = z.object({
+  sessionId: z.string().min(1).max(200),
+  client: z.string().min(1).max(50).default("unknown"),
+  summary: z.string().max(2000).default(""),
+  changedFiles: z.string().max(4000).default(""),
+  cwd: z.string().max(1000).nullish(),
+  at: z.coerce.date().optional(),
+  actorKind: ActorKindEnum.default("system"),
+  idempotencyKey: z.string().min(1).max(200).nullish()
+});
+export type SessionSnapshotInput = z.infer<typeof SessionSnapshotInput>;
+
 export const FeedbackCategoryEnum = z.enum(FEEDBACK_CATEGORIES);
 
 /** Product feedback about botnote itself, filed by agents (or humans) while
