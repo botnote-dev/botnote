@@ -119,7 +119,7 @@ import {
 } from "../service/types.js";
 import { VERSION } from "../version.js";
 import { attachActorLabels } from "./attribution.js";
-import { requestOrigin } from "./auth.js";
+import { requestOrigin, sessionCookieSecure } from "./auth.js";
 import type { ServerContext } from "./server.js";
 
 const IdParams = z.object({ id: Uuid });
@@ -1296,7 +1296,7 @@ export async function registerRoutes(
       const { plaintext, session } = await createSession(req.scope, ctx.db, { userAgent: ua });
       reply.setCookie("botnote_session", plaintext, {
         httpOnly: true,
-        secure: process.env.NODE_ENV === "production",
+        secure: sessionCookieSecure(req.protocol),
         sameSite: "lax",
         path: "/",
         maxAge: 60 * 60 * 24 * 30 // 30 days

@@ -1,21 +1,62 @@
+# Self-hosted botnote: the daemon (REST + MCP + web UI) and its Postgres.
+# Quick start and the networked setup are in docs/self-hosting.md.
+#
+#   docker compose up -d                    # this machine only, http://127.0.0.1:4280
+#   docker compose --profile caddy up -d    # your own domain with automatic HTTPS
+name: botnote
+
 services:
+  botnote:
+    image: ghcr.io/botnote-dev/botnote-server:${BOTNOTE_VERSION:-latest}
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+        required: false
+    environment:
+      DATABASE_URL: ${DATABASE_URL:-postgres://botnote:${POSTGRES_PASSWORD:-botnote}@postgres:5432/botnote}
+      BOTNOTE_PUBLIC_URL: ${BOTNOTE_PUBLIC_URL:-}
+      BOTNOTE_PASSWORD: ${BOTNOTE_PASSWORD:-}
+      BOTNOTE_REQUIRE_AUTH: ${BOTNOTE_REQUIRE_AUTH:-}
+      # Inside a container the reverse proxy and the published port both
+      # arrive from a private Docker address, never from loopback.
+      BOTNOTE_TRUST_PROXY: ${BOTNOTE_TRUST_PROXY:-10.0.0.0/8,172.16.0.0/12,192.168.0.0/16}
+      BOTNOTE_CLIENT_IP_HEADER: ${BOTNOTE_CLIENT_IP_HEADER:-x-forwarded-for}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+    ports:
+      - "${BOTNOTE_BIND:-127.0.0.1}:${BOTNOTE_PORT:-4280}:4280"
+
   postgres:
     image: pgvector/pgvector:pg17
-    container_name: botnote-postgres
     restart: unless-stopped
     environment:
       POSTGRES_USER: botnote
-      POSTGRES_PASSWORD: botnote
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-botnote}
       POSTGRES_DB: botnote
-    ports:
-      - "127.0.0.1:55434:5432"
     volumes:
-      - botnote-pgdata:/var/lib/postgresql/data
+      - pgdata:/var/lib/postgresql/data
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U botnote -d botnote"]
       interval: 5s
       timeout: 3s
-      retries: 10
+      retries: 20
+
+  caddy:
+    profiles: ["caddy"]
+    image: caddy:2-alpine
+    restart: unless-stopped
+    depends_on:
+      - botnote
+    command: caddy reverse-proxy --from ${BOTNOTE_DOMAIN:-localhost} --to botnote:4280
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - caddy-data:/data
+      - caddy-config:/config
 
 volumes:
-  botnote-pgdata:
+  pgdata:
+  caddy-data:
+  caddy-config:
