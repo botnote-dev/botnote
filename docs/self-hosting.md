@@ -123,6 +123,19 @@ Migrations run when the daemon starts. They only ever add to the schema, so
 going back to the previous version (set the old `BOTNOTE_VERSION`, `up -d`)
 works without touching the database. Take a backup first all the same.
 
+### Redeploying from CI
+
+A fork that publishes its own image can redeploy its host after every release.
+The `Publish image` workflow calls a webhook with `POST` and a bearer token
+when both repository secrets are set: `DEPLOY_WEBHOOK_URL` and
+`DEPLOY_WEBHOOK_TOKEN`. Running the workflow by hand with `deploy` ticked calls
+the same webhook without a release.
+
+The URL has to make the host pull the image, not only restart. On Coolify the
+"Deploy webhook" shown for a Compose service (`/api/v1/deploy?uuid=...`)
+restarts with the image already on disk, with or without `force=true`. Use
+`/api/v1/services/<uuid>/restart?latest=true` instead.
+
 ## Backup and restore
 
 The database is the only state. Two scripts in the repository's `scripts/`

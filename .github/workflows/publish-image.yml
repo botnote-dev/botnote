@@ -5,6 +5,11 @@ on:
     tags:
       - "v*"
   workflow_dispatch:
+    inputs:
+      deploy:
+        description: Call the deploy webhook after the build (redeploys whatever tag the host tracks)
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -67,7 +72,7 @@ jobs:
       # Optional: redeploy a host that pulls this image (Coolify and similar
       # expose a deploy webhook). Skipped unless both secrets are set.
       - name: Trigger deploy
-        if: github.ref_type == 'tag'
+        if: github.ref_type == 'tag' || inputs.deploy
         env:
           DEPLOY_WEBHOOK_URL: ${{ secrets.DEPLOY_WEBHOOK_URL }}
           DEPLOY_WEBHOOK_TOKEN: ${{ secrets.DEPLOY_WEBHOOK_TOKEN }}
@@ -76,5 +81,5 @@ jobs:
             echo "no deploy webhook configured; skipping"
             exit 0
           fi
-          curl --fail-with-body --silent --show-error --max-time 60 \
+          curl --fail-with-body --silent --show-error --max-time 60 -X POST \
             -H "Authorization: Bearer $DEPLOY_WEBHOOK_TOKEN" "$DEPLOY_WEBHOOK_URL"
