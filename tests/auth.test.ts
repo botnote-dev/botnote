@@ -3,7 +3,6 @@ import type { FastifyInstance } from "fastify";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
   authConfigFromEnv,
-  exposureProblem,
   sessionCookieSecure,
   clientIp,
   isTrustedProxy,
@@ -34,7 +33,7 @@ function fakeReq(remoteAddress: string, headers: Record<string, string> = {}) {
 }
 
 beforeAll(async () => {
-  await db.execute(sql`TRUNCATE tokens, sessions RESTART IDENTITY CASCADE`);
+  await db.execute(sql`TRUNCATE users, tokens, sessions RESTART IDENTITY CASCADE`);
   process.env.BOTNOTE_PASSWORD = PASSWORD;
   server = await buildServer({ db, embedding, logLevel: "silent", auth: enforcing });
   await server.ready();
@@ -107,14 +106,14 @@ describe("deployments behind a container network or reverse proxy", () => {
     expect(() => authConfigFromEnv({ BOTNOTE_CLIENT_IP_HEADER: "x-real-ip" })).toThrow(/BOTNOTE_CLIENT_IP_HEADER/);
   });
 
-  it("refuses a public URL with auth off unless that is asked for", () => {
-    expect(exposureProblem({ BOTNOTE_PUBLIC_URL: "https://notes.example.com" })).toMatch(/BOTNOTE_PASSWORD/);
-    expect(exposureProblem({ BOTNOTE_PUBLIC_URL: "https://notes.example.com", BOTNOTE_PASSWORD: "x" })).toBeNull();
-    expect(exposureProblem({ BOTNOTE_PUBLIC_URL: "https://notes.example.com", BOTNOTE_REQUIRE_AUTH: "1" })).toBeNull();
-    expect(exposureProblem({ BOTNOTE_PUBLIC_URL: "https://notes.example.com", BOTNOTE_REQUIRE_AUTH: "0" })).toBeNull();
-    expect(exposureProblem({ BOTNOTE_PUBLIC_URL: "http://127.0.0.1:4280" })).toBeNull();
-    expect(exposureProblem({ BOTNOTE_PUBLIC_URL: "http://localhost:4280" })).toBeNull();
-    expect(exposureProblem({})).toBeNull();
+  it("enforces auth for a public URL without being asked", () => {
+    expect(authConfigFromEnv({ BOTNOTE_PUBLIC_URL: "https://notes.example.com" }).required).toBe(true);
+    expect(
+      authConfigFromEnv({ BOTNOTE_PUBLIC_URL: "https://notes.example.com", BOTNOTE_REQUIRE_AUTH: "0" }).required
+    ).toBe(false);
+    expect(authConfigFromEnv({ BOTNOTE_PUBLIC_URL: "http://127.0.0.1:4280" }).required).toBe(false);
+    expect(authConfigFromEnv({ BOTNOTE_PUBLIC_URL: "http://localhost:4280" }).required).toBe(false);
+    expect(authConfigFromEnv({ BOTNOTE_PUBLIC_URL: "not a url" }).required).toBe(false);
   });
 
   it("marks the session cookie Secure only when the browser uses https", () => {

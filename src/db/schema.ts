@@ -253,6 +253,45 @@ export const recurrenceExceptions = pgTable(
   })
 );
 
+export const MEMBER_ROLES = ["owner", "admin", "member"] as const;
+export type MemberRole = (typeof MEMBER_ROLES)[number];
+
+// People who sign in. Until the first row exists the daemon is in its
+// single-password mode; the first account becomes the workspace owner.
+export const users = pgTable(
+  "users",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    email: text("email").notNull(),
+    name: text("name").notNull(),
+    passwordHash: text("password_hash"),
+    disabledAt: timestamp("disabled_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow()
+  },
+  (t) => ({
+    emailIdx: uniqueIndex("users_email_idx").on(t.email)
+  })
+);
+
+export const workspaceMembers = pgTable(
+  "workspace_members",
+  {
+    workspaceId: uuid("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "cascade" }),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    role: text("role").$type<MemberRole>().notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow()
+  },
+  (t) => ({
+    pk: primaryKey({ columns: [t.workspaceId, t.userId] }),
+    userIdx: index("workspace_members_user_idx").on(t.userId)
+  })
+);
+
 export const tokens = pgTable(
   "tokens",
   {
@@ -262,6 +301,7 @@ export const tokens = pgTable(
     tokenHash: text("token_hash").notNull(),
     prefix: text("prefix").notNull(),
     plaintext: text("plaintext"),
+    userId: uuid("user_id").references(() => users.id, { onDelete: "set null" }),
     lastUsedAt: timestamp("last_used_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow()
   },
@@ -334,6 +374,7 @@ export const sessions = pgTable(
     id: uuid("id").primaryKey().defaultRandom(),
     workspaceId: workspaceRef(),
     tokenHash: text("token_hash").notNull(),
+    userId: uuid("user_id").references(() => users.id, { onDelete: "cascade" }),
     expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
     userAgent: text("user_agent"),
     lastUsedAt: timestamp("last_used_at", { withTimezone: true }),
@@ -356,3 +397,5 @@ export type EntityRevision = typeof entityRevisions.$inferSelect;
 export type EmbeddingSettings = typeof embeddingSettings.$inferSelect;
 export type WorkspaceSettings = typeof workspaceSettings.$inferSelect;
 export type Session = typeof sessions.$inferSelect;
+export type User = typeof users.$inferSelect;
+export type WorkspaceMember = typeof workspaceMembers.$inferSelect;

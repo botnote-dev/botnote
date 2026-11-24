@@ -21,6 +21,7 @@ import type { Database } from "../db/client.js";
 import type { EmbeddingService } from "../service/embedding.js";
 import { DEFAULT_SCOPE, scopeFor, type Scope } from "../service/scope.js";
 import { consumeSession } from "../service/sessions.js";
+import { hasUsers } from "../service/users.js";
 import { consumeToken } from "../service/tokens.js";
 import { VERSION } from "../version.js";
 import {
@@ -40,9 +41,14 @@ export interface ServerContext {
   auth: AuthConfig;
   /** Scope for requests that carry no credential (single-workspace mode). */
   defaultScope: Scope;
+  /** Whether anyone has an account yet. Loaded at boot and refreshed by the
+   *  auth routes; once true, a credential is required and browser sessions
+   *  must belong to a user. */
+  accounts: { hasUsers: boolean };
 }
 
-export interface BuildServerOpts extends Omit<ServerContext, "auth" | "defaultScope"> {
+export interface BuildServerOpts
+  extends Omit<ServerContext, "auth" | "defaultScope" | "accounts"> {
   logLevel?: string;
   webDist?: string;
   auth?: AuthConfig;
@@ -56,8 +62,19 @@ declare module "fastify" {
     /** API token that authenticated this request, for write attribution.
      *  null for session-cookie and trusted-loopback requests. */
     actorTokenId: string | null;
+    /** The signed-in person, from a session cookie. null for bearer tokens,
+     *  trusted loopback and password-mode sessions. */
+    userId: string | null;
+    sessionId: string | null;
   }
 }
+
+const OPEN_AUTH_PATHS = [
+  "/v1/auth/login",
+  "/v1/auth/logout",
+  "/v1/auth/status",
+  "/v1/auth/setup"
+];
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -79,6 +96,7 @@ export async function buildServer(opts: BuildServerOpts): Promise<FastifyInstanc
   const isProduction = process.env.NODE_ENV === "production";
   const auth = opts.auth ?? authConfigFromEnv();
   const defaultScope = opts.defaultScope ?? DEFAULT_SCOPE;
+  const accounts = { hasUsers: await hasUsers(opts.db) };
 
   const app = Fastify({
     logger: { level: opts.logLevel ?? "info" },
@@ -220,9 +238,13 @@ export async function buildServer(opts: BuildServerOpts): Promise<FastifyInstanc
   // shape; the hook right below assigns the real value before any handler.
   app.decorateRequest("scope", null as unknown as Scope);
   app.decorateRequest("actorTokenId", null);
+  app.decorateRequest("userId", null);
+  app.decorateRequest("sessionId", null);
   app.addHook("onRequest", async (req) => {
     req.scope = defaultScope;
     req.actorTokenId = null;
+    req.userId = null;
+    req.sessionId = null;
   });
 
   // ----- auth -----
@@ -243,15 +265,10 @@ export async function buildServer(opts: BuildServerOpts): Promise<FastifyInstanc
   app.addHook("onRequest", async (req, reply) => {
     const mcp = isMcpPath(req.url);
     if (!mcp && !req.url.startsWith("/v1/")) return;
-    // The login endpoint is the entry point — gating it would be a
+    // The sign-in surface is the entry point — gating it would be a
     // chicken-and-egg loop. Logout is fine to leave open too (it's a noop
     // when no cookie is present).
-    if (
-      req.url.startsWith("/v1/auth/login") ||
-      req.url.startsWith("/v1/auth/logout")
-    ) {
-      return;
-    }
+    if (OPEN_AUTH_PATHS.some((p) => req.url.startsWith(p))) return;
 
     // CLI / MCP path: bearer token.
     const authHeader = req.headers.authorization;
@@ -265,18 +282,23 @@ export async function buildServer(opts: BuildServerOpts): Promise<FastifyInstanc
       }
     }
 
-    if (!auth.required) return;
-    if (isTrustedWithoutCredential(req, auth)) return;
-
-    // Browser path: session cookie set by /v1/auth/login.
+    // Browser path: session cookie set by /v1/auth/login. Read before the
+    // early returns so a signed-in person is known even on a trusted
+    // connection. Once accounts exist, a session with no user is a leftover
+    // from password mode and no longer counts.
     const cookieToken = req.cookies?.botnote_session;
     if (cookieToken) {
       const session = await consumeSession(opts.db, cookieToken);
-      if (session) {
+      if (session && (session.userId || !accounts.hasUsers)) {
         req.scope = scopeFor(session.workspaceId);
+        req.userId = session.userId;
+        req.sessionId = session.id;
         return;
       }
     }
+
+    if (!auth.required && !accounts.hasUsers) return;
+    if (isTrustedWithoutCredential(req, auth)) return;
 
     if (mcp) {
       return reply.code(401).send({
@@ -289,7 +311,7 @@ export async function buildServer(opts: BuildServerOpts): Promise<FastifyInstanc
   });
   app.log.info(describeAuthConfig(auth));
 
-  await registerRoutes(app, { db: opts.db, embedding: opts.embedding, auth, defaultScope });
+  await registerRoutes(app, { db: opts.db, embedding: opts.embedding, auth, defaultScope, accounts });
   registerMcpRoute(app);
 
   const webDist = resolveWebDist(opts.webDist);

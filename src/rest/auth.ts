@@ -5,7 +5,9 @@ import type { FastifyRequest } from "fastify";
  * believes. Resolved once from the environment at boot; tests pass it in.
  *
  *   BOTNOTE_REQUIRE_AUTH   "1" enforce, "0" disable. Unset: enforce when
- *                          BOTNOTE_PASSWORD is set (there is a login to protect).
+ *                          BOTNOTE_PASSWORD is set or BOTNOTE_PUBLIC_URL names
+ *                          a host other than this machine. Whatever this says,
+ *                          auth is enforced once the first account exists.
  *   BOTNOTE_TRUST_LOCALHOST "0" to make loopback callers present a credential
  *                          too. Default "1": a direct connection from the daemon
  *                          host needs no token, which keeps the local install
@@ -42,7 +44,8 @@ export type RequestOrigin = "local" | "proxied" | "direct";
 export function authConfigFromEnv(env: NodeJS.ProcessEnv = process.env): AuthConfig {
   // Compose passes unset variables through as empty strings.
   const flag = env.BOTNOTE_REQUIRE_AUTH?.trim() || undefined;
-  const required = flag === undefined ? Boolean(env.BOTNOTE_PASSWORD) : flag === "1";
+  const required =
+    flag === undefined ? Boolean(env.BOTNOTE_PASSWORD) || hasPublicUrl(env) : flag === "1";
   return {
     required,
     trustLocalhost: env.BOTNOTE_TRUST_LOCALHOST !== "0",
@@ -68,26 +71,19 @@ function isLoopbackHost(hostname: string): boolean {
 }
 
 /**
- * A daemon told it is reachable at a public URL must not run with auth off:
- * that is a deployment one forgotten variable away from serving every task and
- * memory to anyone. Returns why the configuration is refused, or null.
- * BOTNOTE_REQUIRE_AUTH=0 is the explicit way to run open (VPN, tailnet).
+ * A daemon told it is reachable at a public URL enforces auth without being
+ * asked: a deployment must not be one forgotten variable away from serving
+ * every task and memory to anyone. With no account yet, the only thing such a
+ * daemon offers a stranger is the first-run setup page.
  */
-export function exposureProblem(env: NodeJS.ProcessEnv = process.env): string | null {
+function hasPublicUrl(env: NodeJS.ProcessEnv): boolean {
   const publicUrl = env.BOTNOTE_PUBLIC_URL?.trim();
-  if (!publicUrl) return null;
-  if (authConfigFromEnv(env).required || env.BOTNOTE_REQUIRE_AUTH?.trim() === "0") return null;
-  let hostname: string;
+  if (!publicUrl) return false;
   try {
-    hostname = new URL(publicUrl).hostname;
+    return !isLoopbackHost(new URL(publicUrl).hostname);
   } catch {
-    return null;
+    return false;
   }
-  if (isLoopbackHost(hostname)) return null;
-  return (
-    `BOTNOTE_PUBLIC_URL is ${publicUrl} but auth is off, so anyone who can reach it could read and write everything. ` +
-    "Set BOTNOTE_PASSWORD, or set BOTNOTE_REQUIRE_AUTH=0 to run without auth on purpose."
-  );
 }
 
 /** The session cookie is Secure whenever the browser reaches the daemon over
@@ -206,7 +202,7 @@ export function isTrustedWithoutCredential(req: HeaderBag, cfg: AuthConfig): boo
 }
 
 export function describeAuthConfig(cfg: AuthConfig): string {
-  if (!cfg.required) return "auth: disabled (set BOTNOTE_REQUIRE_AUTH=1 or BOTNOTE_PASSWORD to enforce)";
+  if (!cfg.required) return "auth: not enforced until the first account is created (set BOTNOTE_REQUIRE_AUTH=1 to enforce now)";
   const local = cfg.trustLocalhost ? "loopback trusted without credential" : "loopback requires credential";
   return `auth: required for /v1/* and /mcp (cookie or bearer); ${local}; trusted proxies: ${cfg.trustedProxies.join(", ") || "none"}; client ip from: ${cfg.clientIpHeader ?? "auto"}`;
 }

@@ -8,8 +8,9 @@ import { materializeScheduledRecurrences } from "./service/recurrence.js";
 import { resolveDefaultScope } from "./service/scope.js";
 import { pruneExpiredSessions } from "./service/sessions.js";
 import { DEFAULT_PORT, envValue } from "./config.js";
-import { authConfigFromEnv, exposureProblem, isLoopback } from "./rest/auth.js";
+import { authConfigFromEnv, isLoopback } from "./rest/auth.js";
 import { buildServer } from "./rest/server.js";
+import { resetPassword } from "./service/users.js";
 import { VERSION } from "./version.js";
 
 const DEFAULT_RECURRENCE_MATERIALIZE_INTERVAL_MS = 5 * 60 * 1000;
@@ -36,9 +37,6 @@ async function runRest(): Promise<void> {
     process.env.BOTNOTE_RECURRENCE_MATERIALIZE_INTERVAL_MS ??
       DEFAULT_RECURRENCE_MATERIALIZE_INTERVAL_MS
   );
-
-  const exposure = exposureProblem();
-  if (exposure) throw new Error(exposure);
 
   await migrate();
 
@@ -163,7 +161,28 @@ if (process.argv[2] === "mcp") {
   process.exit(2);
 }
 
-runRest().catch((err) => {
+// Recovery for a forgotten password, run on the daemon host:
+//   node dist/cli.js reset-password <email>
+async function runResetPassword(email: string | undefined): Promise<void> {
+  if (!email) {
+    console.error("Usage: botnote-server reset-password <email>");
+    process.exit(2);
+  }
+  await migrate();
+  const { db, pool } = createDb();
+  const password = await resetPassword(db, email);
+  await pool.end();
+  if (!password) {
+    console.error(`No account with the email ${email}.`);
+    process.exit(1);
+  }
+  console.log(`New password for ${email}: ${password}`);
+  console.log("Every browser signed in as this person has been signed out. Change it under Settings after signing in.");
+}
+
+const main = process.argv[2] === "reset-password" ? runResetPassword(process.argv[3]) : runRest();
+
+main.catch((err) => {
   console.error(err);
   process.exit(1);
 });

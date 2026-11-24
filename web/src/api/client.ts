@@ -41,6 +41,19 @@ import type {
 const BASE_URL = "";
 const LOGIN_PATH = "/login";
 
+export interface AuthStatus {
+  setupRequired: boolean;
+  setupCodeRequired: boolean;
+  login: "email" | "password" | "none";
+}
+
+export interface AccountUser {
+  id: string;
+  email: string;
+  name: string;
+  role: "owner" | "admin" | "member";
+}
+
 /** Paths the global 401 interceptor must NOT redirect from, because they're
  *  part of the login surface itself or expected to return 401 as a status,
  *  not as a "you should log in" signal. */
@@ -48,6 +61,9 @@ const NO_REDIRECT_PATHS = new Set<string>([
   "/v1/auth/login",
   "/v1/auth/logout",
   "/v1/auth/whoami",
+  "/v1/auth/status",
+  "/v1/auth/setup",
+  "/v1/auth/password",
   "/health"
 ]);
 
@@ -257,10 +273,23 @@ export const api = {
   revokeToken: (id: string) => request<void>(`/v1/tokens/${id}`, { method: "DELETE" }),
 
   // ----- auth -----
-  login: (password: string) =>
+  authStatus: () => request<AuthStatus>("/v1/auth/status"),
+  /** `email` is omitted on an instance that has no account yet and still
+   *  signs in with its instance password. */
+  login: (input: { email?: string; password: string }) =>
     request<{ ok: boolean; expiresAt: string }>("/v1/auth/login", {
       method: "POST",
-      body: JSON.stringify({ password })
+      body: JSON.stringify(input)
+    }),
+  setup: (input: { email: string; name: string; password: string; setupCode?: string }) =>
+    request<{ ok: boolean; expiresAt: string; user: AccountUser }>("/v1/auth/setup", {
+      method: "POST",
+      body: JSON.stringify(input)
+    }),
+  changePassword: (input: { currentPassword: string; newPassword: string }) =>
+    request<{ ok: boolean }>("/v1/auth/password", {
+      method: "POST",
+      body: JSON.stringify(input)
     }),
   logout: () =>
     request<{ ok: boolean }>("/v1/auth/logout", { method: "POST" }),
@@ -269,5 +298,6 @@ export const api = {
       authenticated: boolean;
       via: "cookie" | "bearer" | "trusted_origin" | "auth_disabled";
       origin: "local" | "proxied" | "direct";
+      user: AccountUser | null;
     }>("/v1/auth/whoami")
 };

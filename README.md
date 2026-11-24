@@ -88,8 +88,14 @@ secret-bearing material, and revoke tokens if either is exposed.
 
 ### Authentication
 
-Auth is enforced when `BOTNOTE_REQUIRE_AUTH=1`, or when `BOTNOTE_PASSWORD` is
-set and the flag is left unset. Every `/v1/*` request then needs a bearer token
+People sign in to the web UI with an email and password. The first person to
+open a new instance creates the owner account; when `BOTNOTE_PASSWORD` is set,
+that page asks for it as a setup code. A forgotten password is reset on the
+daemon host with `botnote-server reset-password <email>`.
+
+Auth is enforced once an account exists, when `BOTNOTE_REQUIRE_AUTH=1`, or,
+with the flag unset, when `BOTNOTE_PASSWORD` is set or `BOTNOTE_PUBLIC_URL`
+names another host. Every `/v1/*` request then needs a bearer token
 (`Authorization: Bearer bn_...`) or the session cookie from the web login. The
 one exception is a direct connection from the daemon host itself: loopback
 callers need no token, so the local CLI and plugins keep working with zero
@@ -98,7 +104,7 @@ binding `BOTNOTE_HOST=0.0.0.0` on a LAN or VPS does not open the API.
 
 | Var | Default | Meaning |
 |-----|---------|---------|
-| `BOTNOTE_REQUIRE_AUTH` | `1` if `BOTNOTE_PASSWORD` is set, else `0` | Enforce cookie/bearer on `/v1/*` |
+| `BOTNOTE_REQUIRE_AUTH` | `1` if `BOTNOTE_PASSWORD` or a public `BOTNOTE_PUBLIC_URL` is set, else `0` | Enforce cookie/bearer on `/v1/*` before any account exists |
 | `BOTNOTE_TRUST_LOCALHOST` | `1` | `0` makes loopback callers present a credential too |
 | `BOTNOTE_TRUST_PROXY` | `loopback` | Peers whose `x-forwarded-for` / `cf-connecting-ip` are believed: `loopback`, an IP, or an IPv4 CIDR, comma-separated |
 | `BOTNOTE_CLIENT_IP_HEADER` | both, `cf-connecting-ip` first | Which header from a trusted proxy names the client: `x-forwarded-for` or `cf-connecting-ip` |

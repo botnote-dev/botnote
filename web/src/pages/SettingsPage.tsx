@@ -42,7 +42,7 @@ import {
 import { formatDistanceToNow } from "date-fns";
 import { useEffect, useId, useMemo, useState, type FormEvent, type ReactNode } from "react";
 import { useNavigate } from "react-router-dom";
-import { api } from "../api/client";
+import { api, type AccountUser } from "../api/client";
 import {
   useBackfillEmbeddings,
   useCreateToken,
@@ -265,8 +265,9 @@ function AccountSection() {
     <>
       <SectionHeader
         title="Account"
-        blurb="Browser session uses a master-password login. Agents (CLI / MCP) authenticate with bearer tokens, generated under API tokens."
+        blurb="You sign in to the web UI with your email and password. Agents (CLI / MCP) authenticate with bearer tokens, generated under API tokens."
       />
+      <PasswordCard />
       <WorkspaceTimezoneCard />
       <div className={cn(CARD, "flex items-center justify-between gap-3 px-4 py-3")}>
         <div className="text-xs text-kumo-subtle">
@@ -285,6 +286,96 @@ function AccountSection() {
         </Button>
       </div>
     </>
+  );
+}
+
+function PasswordCard() {
+  const [user, setUser] = useState<AccountUser | null>(null);
+  const [current, setCurrent] = useState("");
+  const [next, setNext] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [result, setResult] = useState<{ tone: NoticeTone; text: string } | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    api
+      .whoami()
+      .then((who) => {
+        if (!cancelled) setUser(who.user);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  if (!user) return null;
+
+  async function onSave(e: FormEvent) {
+    e.preventDefault();
+    if (busy || !current || next.length < 8) return;
+    setBusy(true);
+    setResult(null);
+    try {
+      await api.changePassword({ currentPassword: current, newPassword: next });
+      setCurrent("");
+      setNext("");
+      setResult({ tone: "success", text: "Password changed. Your other browsers were signed out." });
+    } catch (err) {
+      const wrong = errorText(err).includes("invalid_password");
+      setResult({
+        tone: "error",
+        text: wrong ? "The current password is wrong." : "Could not change the password."
+      });
+    }
+    setBusy(false);
+  }
+
+  return (
+    <form onSubmit={onSave} className={cn(CARD, "overflow-hidden")}>
+      <CardHeader title="Signed in as" />
+      <div className="space-y-3 px-4 py-3">
+        <div className="text-xs text-kumo-default">
+          {user.name} <span className="text-kumo-subtle">· {user.email} · {user.role}</span>
+        </div>
+        <div className="grid gap-3 sm:grid-cols-2">
+          <Field label="Current password" htmlFor="current-password">
+            <Input
+              id="current-password"
+              type="password"
+              autoComplete="current-password"
+              className="w-full"
+              value={current}
+              onChange={(e) => setCurrent(e.target.value)}
+              disabled={busy}
+            />
+          </Field>
+          <Field label="New password (at least 8 characters)" htmlFor="new-password">
+            <Input
+              id="new-password"
+              type="password"
+              autoComplete="new-password"
+              className="w-full"
+              value={next}
+              onChange={(e) => setNext(e.target.value)}
+              disabled={busy}
+            />
+          </Field>
+        </div>
+        {result && <Notice tone={result.tone}>{result.text}</Notice>}
+        <div className="flex justify-end">
+          <Button
+            type="submit"
+            variant="secondary"
+            size="sm"
+            loading={busy}
+            disabled={busy || !current || next.length < 8}
+          >
+            Change password
+          </Button>
+        </div>
+      </div>
+    </form>
   );
 }
 
