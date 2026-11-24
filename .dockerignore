@@ -1,0 +1,15 @@
+.git
+.github
+**/node_modules
+**/dist
+**/*.tsbuildinfo
+.env
+.env.*
+!.env.example
+coverage
+.vitest-cache
+*.log
+.DS_Store
+docs
+tests
+backups

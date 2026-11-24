@@ -1,0 +1,21 @@
+services:
+  postgres:
+    image: pgvector/pgvector:pg17
+    container_name: botnote-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: botnote
+      POSTGRES_PASSWORD: botnote
+      POSTGRES_DB: botnote
+    ports:
+      - "127.0.0.1:55434:5432"
+    volumes:
+      - botnote-pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U botnote -d botnote"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  botnote-pgdata:

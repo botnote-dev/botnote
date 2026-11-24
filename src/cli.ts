@@ -8,7 +8,7 @@ import { materializeScheduledRecurrences } from "./service/recurrence.js";
 import { resolveDefaultScope } from "./service/scope.js";
 import { pruneExpiredSessions } from "./service/sessions.js";
 import { DEFAULT_PORT, envValue } from "./config.js";
-import { authConfigFromEnv, isLoopback } from "./rest/auth.js";
+import { authConfigFromEnv, exposureProblem, isLoopback } from "./rest/auth.js";
 import { buildServer } from "./rest/server.js";
 import { VERSION } from "./version.js";
 
@@ -36,6 +36,9 @@ async function runRest(): Promise<void> {
     process.env.BOTNOTE_RECURRENCE_MATERIALIZE_INTERVAL_MS ??
       DEFAULT_RECURRENCE_MATERIALIZE_INTERVAL_MS
   );
+
+  const exposure = exposureProblem();
+  if (exposure) throw new Error(exposure);
 
   await migrate();
 

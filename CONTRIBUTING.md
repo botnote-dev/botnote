@@ -6,7 +6,7 @@ Thanks for helping improve botnote.
 
 ```bash
 pnpm install
-docker compose up -d
+docker compose -f docker-compose.dev.yml up -d
 DATABASE_URL=postgres://botnote:botnote@127.0.0.1:55434/botnote pnpm db:migrate
 DATABASE_URL=postgres://botnote:botnote@127.0.0.1:55434/botnote pnpm dev
 ```

@@ -38,7 +38,18 @@ Memory is distilled from worklog. Worklog stays searchable, so "how was this don
 
 ## Quick start
 
-Requires: Node 20+, pnpm, Docker.
+The fastest way to run your own instance is Docker Compose:
+
+```bash
+curl -fsSLO https://raw.githubusercontent.com/botnote-dev/botnote/main/docker-compose.yml
+docker compose up -d        # web UI, REST and MCP on http://127.0.0.1:4280
+```
+
+[docs/self-hosting.md](docs/self-hosting.md) covers putting it on your own
+domain so several devices can connect, using an external Postgres, upgrades
+and backups.
+
+Working on botnote itself requires Node 20+, pnpm and Docker.
 
 ### Packages
 
@@ -90,11 +101,19 @@ binding `BOTNOTE_HOST=0.0.0.0` on a LAN or VPS does not open the API.
 | `BOTNOTE_REQUIRE_AUTH` | `1` if `BOTNOTE_PASSWORD` is set, else `0` | Enforce cookie/bearer on `/v1/*` |
 | `BOTNOTE_TRUST_LOCALHOST` | `1` | `0` makes loopback callers present a credential too |
 | `BOTNOTE_TRUST_PROXY` | `loopback` | Peers whose `x-forwarded-for` / `cf-connecting-ip` are believed: `loopback`, an IP, or an IPv4 CIDR, comma-separated |
+| `BOTNOTE_CLIENT_IP_HEADER` | both, `cf-connecting-ip` first | Which header from a trusted proxy names the client: `x-forwarded-for` or `cf-connecting-ip` |
 
 Behind Cloudflare Tunnel, nginx or Caddy on the same host the defaults are
 right. If the proxy runs on another machine, list its address in
 `BOTNOTE_TRUST_PROXY`; otherwise its forwarded headers are ignored and rate
 limiting keys on the proxy itself.
+
+A proxy other than Cloudflare forwards a client-supplied `cf-connecting-ip`
+untouched, so behind Caddy, Traefik or nginx set
+`BOTNOTE_CLIENT_IP_HEADER=x-forwarded-for`; otherwise a caller can choose its
+own rate-limit bucket. The Compose file does this already. The daemon also
+refuses to start when `BOTNOTE_PUBLIC_URL` names a public address while auth is
+off, unless `BOTNOTE_REQUIRE_AUTH=0` says that is intended.
 
 The Codex and Cursor plugins call `botnote mcp`, so installing the `botnote`
 npm package is enough for plugin runtime on machines that do not have a botnote
@@ -135,7 +154,7 @@ stored at noon UTC so it reads as the same day in every timezone.
 
 ```bash
 # 1. Spin up postgres (port 55434, pgvector extension)
-docker compose up -d
+docker compose -f docker-compose.dev.yml up -d
 
 # 2. Install deps
 pnpm install
@@ -162,7 +181,7 @@ helper refuses any other database name so local test runs do not touch a live
 botnote instance.
 
 ```bash
-docker compose up -d
+docker compose -f docker-compose.dev.yml up -d
 docker exec botnote-postgres createdb -U botnote botnote_test || true
 
 DATABASE_URL=postgres://botnote:botnote@127.0.0.1:55434/botnote_test pnpm db:migrate

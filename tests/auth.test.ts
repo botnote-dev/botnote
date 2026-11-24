@@ -3,6 +3,8 @@ import type { FastifyInstance } from "fastify";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
   authConfigFromEnv,
+  exposureProblem,
+  sessionCookieSecure,
   clientIp,
   isTrustedProxy,
   requestOrigin,
@@ -55,6 +57,12 @@ describe("auth config from environment", () => {
     expect(authConfigFromEnv({ BOTNOTE_REQUIRE_AUTH: "1" }).required).toBe(true);
   });
 
+  it("reads an empty flag as unset", () => {
+    expect(authConfigFromEnv({ BOTNOTE_PASSWORD: "x", BOTNOTE_REQUIRE_AUTH: "" }).required).toBe(true);
+    expect(authConfigFromEnv({ BOTNOTE_REQUIRE_AUTH: "" }).required).toBe(false);
+    expect(authConfigFromEnv({ BOTNOTE_CLIENT_IP_HEADER: "" }).clientIpHeader).toBe("auto");
+  });
+
   it("trusts loopback by default and honours overrides", () => {
     const cfg = authConfigFromEnv({});
     expect(cfg.trustLocalhost).toBe(true);
@@ -65,6 +73,55 @@ describe("auth config from environment", () => {
     });
     expect(custom.trustLocalhost).toBe(false);
     expect(custom.trustedProxies).toEqual(["loopback", "10.0.0.5", "172.16.0.0/12"]);
+  });
+});
+
+describe("deployments behind a container network or reverse proxy", () => {
+  const dockerPeer = "172.18.0.3";
+  const behindProxy = authConfigFromEnv({
+    BOTNOTE_PASSWORD: "x",
+    BOTNOTE_TRUST_PROXY: "10.0.0.0/8,172.16.0.0/12,192.168.0.0/16",
+    BOTNOTE_CLIENT_IP_HEADER: "x-forwarded-for"
+  });
+
+  it("never treats a proxy or bridge peer as the trusted local machine", () => {
+    expect(requestOrigin(fakeReq(dockerPeer), behindProxy)).toBe("direct");
+    expect(requestOrigin(fakeReq(dockerPeer, { "x-forwarded-for": "127.0.0.1" }), behindProxy)).toBe("proxied");
+  });
+
+  it("takes the client from the hop the proxy wrote, not from a forgeable header", () => {
+    expect(
+      clientIp(fakeReq(dockerPeer, { "x-forwarded-for": PUBLIC_CLIENT, "cf-connecting-ip": "1.2.3.4" }), behindProxy)
+    ).toBe(PUBLIC_CLIENT);
+    expect(
+      clientIp(fakeReq(dockerPeer, { "x-forwarded-for": `1.2.3.4, ${PUBLIC_CLIENT}` }), behindProxy)
+    ).toBe(PUBLIC_CLIENT);
+    const cloudflare = { ...behindProxy, clientIpHeader: "cf-connecting-ip" as const };
+    expect(
+      clientIp(fakeReq(dockerPeer, { "x-forwarded-for": "1.2.3.4", "cf-connecting-ip": PUBLIC_CLIENT }), cloudflare)
+    ).toBe(PUBLIC_CLIENT);
+    expect(clientIp(fakeReq(dockerPeer, { "x-forwarded-for": "1.2.3.4" }), cloudflare)).toBe(dockerPeer);
+  });
+
+  it("rejects an unknown client ip header", () => {
+    expect(() => authConfigFromEnv({ BOTNOTE_CLIENT_IP_HEADER: "x-real-ip" })).toThrow(/BOTNOTE_CLIENT_IP_HEADER/);
+  });
+
+  it("refuses a public URL with auth off unless that is asked for", () => {
+    expect(exposureProblem({ BOTNOTE_PUBLIC_URL: "https://notes.example.com" })).toMatch(/BOTNOTE_PASSWORD/);
+    expect(exposureProblem({ BOTNOTE_PUBLIC_URL: "https://notes.example.com", BOTNOTE_PASSWORD: "x" })).toBeNull();
+    expect(exposureProblem({ BOTNOTE_PUBLIC_URL: "https://notes.example.com", BOTNOTE_REQUIRE_AUTH: "1" })).toBeNull();
+    expect(exposureProblem({ BOTNOTE_PUBLIC_URL: "https://notes.example.com", BOTNOTE_REQUIRE_AUTH: "0" })).toBeNull();
+    expect(exposureProblem({ BOTNOTE_PUBLIC_URL: "http://127.0.0.1:4280" })).toBeNull();
+    expect(exposureProblem({ BOTNOTE_PUBLIC_URL: "http://localhost:4280" })).toBeNull();
+    expect(exposureProblem({})).toBeNull();
+  });
+
+  it("marks the session cookie Secure only when the browser uses https", () => {
+    expect(sessionCookieSecure("http", { BOTNOTE_PUBLIC_URL: "https://notes.example.com" })).toBe(true);
+    expect(sessionCookieSecure("https", { BOTNOTE_PUBLIC_URL: "http://192.168.1.10:4280" })).toBe(false);
+    expect(sessionCookieSecure("https", {})).toBe(true);
+    expect(sessionCookieSecure("http", { NODE_ENV: "production" })).toBe(false);
   });
 });
 
