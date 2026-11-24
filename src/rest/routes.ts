@@ -35,7 +35,18 @@ import {
   updateProject
 } from "../service/projects.js";
 import { findSimilar, search } from "../service/search.js";
-import type { Scope } from "../service/scope.js";
+import { assertAdmin, assertOwner, scopeFor, type Scope } from "../service/scope.js";
+import {
+  acceptInvite,
+  createInvite,
+  describeInvite,
+  listInvites,
+  listMembers,
+  removeMember,
+  revokeInvite,
+  setMemberRole,
+  userNames
+} from "../service/members.js";
 import { listFeedback, submitFeedback } from "../service/feedback.js";
 import {
   createKeyResult,
@@ -71,7 +82,8 @@ import {
   changePassword,
   createOwner,
   getAccount,
-  hasUsers
+  hasUsers,
+  updateProfile
 } from "../service/users.js";
 import {
   createRecurrenceRule,
@@ -198,6 +210,7 @@ function publicToken(t: Token) {
     name: t.name,
     prefix: t.prefix,
     plaintext: t.plaintext,
+    userId: t.userId,
     lastUsedAt: t.lastUsedAt,
     createdAt: t.createdAt
   };
@@ -246,7 +259,11 @@ export async function registerRoutes(
   // routes (and anything nested: hits, links, briefs) stay unaware of it.
   app.addHook("preSerialization", async (req, _reply, payload) => {
     if (!req.url.startsWith("/v1/")) return payload;
-    return attachActorLabels(payload, () => tokenLabels(req.scope, ctx.db));
+    return attachActorLabels(
+      payload,
+      () => tokenLabels(req.scope, ctx.db),
+      (ids) => userNames(ctx.db, ids)
+    );
   });
 
   app.get("/health", async () => {
@@ -288,6 +305,7 @@ export async function registerRoutes(
       }
     },
     async (req) => {
+      assertAdmin(req.scope);
       const body = UpdateEmbeddingSettingsInput.parse(req.body);
       await updateEmbeddingSettings(req.scope, ctx.db, body);
       await ctx.embedding.reloadConfig();
@@ -306,6 +324,7 @@ export async function registerRoutes(
       }
     },
     async (req) => {
+      assertAdmin(req.scope);
       const body = EmbeddingBackfillInput.parse(req.body ?? {});
       const coverage = await embeddingCoverage(req.scope, ctx.db);
       const limit = body.limit ?? coverage.missingCount;
@@ -342,6 +361,7 @@ export async function registerRoutes(
       }
     },
     async (req) => {
+      assertAdmin(req.scope);
       const body = UpdateWorkspaceSettingsInput.parse(req.body);
       await updateWorkspaceSettings(req.scope, ctx.db, body);
       return workspaceSettingsResponse(req.scope, ctx.db);
@@ -1287,10 +1307,26 @@ export async function registerRoutes(
 
   const SetupBody = z.object({
     email: z.string().trim().email().max(320),
-    name: z.string().trim().min(1).max(100),
+    name: z.string().trim().max(100).optional(),
     password: Password,
     setupCode: z.string().max(500).optional()
   });
+
+  const ProfileBody = z.object({ name: z.string().trim().min(1).max(100) });
+
+  const InviteBody = z.object({
+    role: z.enum(["member", "admin"]).default("member"),
+    email: z.string().trim().email().max(320).optional()
+  });
+  const InviteLookupBody = z.object({ token: z.string().min(1).max(200) });
+  const AcceptInviteBody = z.object({
+    token: z.string().min(1).max(200),
+    email: z.string().trim().email().max(320),
+    name: z.string().trim().max(100).optional(),
+    password: Password
+  });
+  const MemberParams = z.object({ userId: Uuid });
+  const MemberRoleBody = z.object({ role: z.enum(["member", "admin"]) });
 
   const ChangePasswordBody = z.object({
     currentPassword: z.string().min(1).max(500),
@@ -1300,10 +1336,11 @@ export async function registerRoutes(
   async function startSession(
     req: FastifyRequest,
     reply: FastifyReply,
-    userId: string | null
+    userId: string | null,
+    scope: Scope = req.scope
   ): Promise<Date> {
     const ua = (req.headers["user-agent"] as string | undefined) ?? null;
-    const { plaintext, session } = await createSession(req.scope, ctx.db, { userAgent: ua, userId });
+    const { plaintext, session } = await createSession(scope, ctx.db, { userAgent: ua, userId });
     reply.setCookie("botnote_session", plaintext, {
       httpOnly: true,
       secure: sessionCookieSecure(req.protocol),
@@ -1466,11 +1503,165 @@ export async function registerRoutes(
     }
   );
 
+  app.patch(
+    "/v1/auth/profile",
+    {
+      config: { rateLimit: { max: 30, timeWindow: "1 hour" } },
+      schema: { tags: ["auth"], summary: "Change your own display name.", body: ProfileBody }
+    },
+    async (req, reply) => {
+      const body = ProfileBody.parse(req.body);
+      if (!req.userId) {
+        return reply.code(403).send({
+          error: "no_account",
+          message: "Sign in to the web UI with your email to change your profile."
+        });
+      }
+      await updateProfile(ctx.db, req.userId, body);
+      return { ok: true, user: await getAccount(req.scope, ctx.db, req.userId) };
+    }
+  );
+
+  app.post(
+    "/v1/auth/invite/lookup",
+    {
+      config: { rateLimit: { max: 20, timeWindow: "1 minute" } },
+      schema: {
+        tags: ["auth"],
+        summary: "What an invite link grants, for the accept page.",
+        body: InviteLookupBody
+      }
+    },
+    async (req, reply) => {
+      const { token } = InviteLookupBody.parse(req.body);
+      const invite = await describeInvite(ctx.db, token);
+      if (!invite) {
+        await refusalDelay();
+        return reply.code(404).send({ error: "invalid_invite" });
+      }
+      return invite;
+    }
+  );
+
+  app.post(
+    "/v1/auth/invite/accept",
+    {
+      config: { rateLimit: { max: 10, timeWindow: "1 minute" } },
+      schema: {
+        tags: ["auth"],
+        summary: "Join with an invite link: create your account and sign in.",
+        body: AcceptInviteBody
+      }
+    },
+    async (req, reply) => {
+      const body = AcceptInviteBody.parse(req.body);
+      const { workspaceId, ...account } = await acceptInvite(ctx.db, body);
+      const expiresAt = await startSession(req, reply, account.id, scopeFor(workspaceId));
+      return { ok: true, expiresAt, user: account };
+    }
+  );
+
+  // ----- members -----
+
+  app.get(
+    "/v1/members",
+    { schema: { tags: ["members"], summary: "People in this workspace." } },
+    async (req) => listMembers(req.scope, ctx.db)
+  );
+
+  app.patch(
+    "/v1/members/:userId",
+    {
+      config: { rateLimit: { max: 30, timeWindow: "1 hour" } },
+      schema: {
+        tags: ["members"],
+        summary: "Change a member's role (owner only).",
+        params: MemberParams,
+        body: MemberRoleBody
+      }
+    },
+    async (req) => {
+      const { userId } = MemberParams.parse(req.params);
+      const { role } = MemberRoleBody.parse(req.body);
+      await setMemberRole(req.scope, ctx.db, userId, role);
+      return { ok: true };
+    }
+  );
+
+  app.delete(
+    "/v1/members/:userId",
+    {
+      config: { rateLimit: { max: 30, timeWindow: "1 hour" } },
+      schema: {
+        tags: ["members"],
+        summary:
+          "Remove a member. Their tokens stop working and their projects pass to the owner.",
+        params: MemberParams
+      }
+    },
+    async (req, reply) => {
+      const { userId } = MemberParams.parse(req.params);
+      await removeMember(req.scope, ctx.db, userId);
+      return reply.code(204).send();
+    }
+  );
+
+  const publicInvite = (i: Awaited<ReturnType<typeof listInvites>>[number]) => ({
+    id: i.id,
+    role: i.role,
+    email: i.email,
+    expiresAt: i.expiresAt,
+    createdAt: i.createdAt
+  });
+
+  app.get(
+    "/v1/invites",
+    { schema: { tags: ["members"], summary: "Invite links that can still be used." } },
+    async (req) => (await listInvites(req.scope, ctx.db)).map(publicInvite)
+  );
+
+  app.post(
+    "/v1/invites",
+    {
+      config: { rateLimit: { max: 30, timeWindow: "1 hour" } },
+      schema: {
+        tags: ["members"],
+        summary:
+          "Create an invite link. The token is returned once; send the link by any channel.",
+        body: InviteBody
+      }
+    },
+    async (req) => {
+      const body = InviteBody.parse(req.body ?? {});
+      const { invite, token } = await createInvite(req.scope, ctx.db, body);
+      return { ...publicInvite(invite), token };
+    }
+  );
+
+  app.delete(
+    "/v1/invites/:id",
+    {
+      config: { rateLimit: { max: 30, timeWindow: "1 hour" } },
+      schema: { tags: ["members"], summary: "Revoke an invite link.", params: IdParams }
+    },
+    async (req, reply) => {
+      const { id } = IdParams.parse(req.params);
+      const ok = await revokeInvite(req.scope, ctx.db, id);
+      if (!ok) return reply.code(404).send({ error: "not_found" });
+      return reply.code(204).send();
+    }
+  );
+
   // ----- tokens -----
 
   app.get(
     "/v1/tokens",
-    { schema: { tags: ["tokens"], summary: "List API tokens (no hash; includes recoverable plaintext when available)" } },
+    {
+      schema: {
+        tags: ["tokens"],
+        summary: "List your API tokens. An owner or admin also sees other members' tokens."
+      }
+    },
     async (req) => (await listTokens(req.scope, ctx.db)).map(publicToken)
   );
 
@@ -1483,7 +1674,7 @@ export async function registerRoutes(
       config: { rateLimit: { max: 30, timeWindow: "1 hour" } },
       schema: {
         tags: ["tokens"],
-        summary: "Create a new API token (plaintext remains available for copying)",
+        summary: "Create an API token for your own agents. The plaintext is returned once.",
         body: CreateTokenInput
       }
     },
@@ -1522,6 +1713,7 @@ export async function registerRoutes(
       }
     },
     async (req, reply) => {
+      assertOwner(req.scope);
       const { vectors } = ExportQuery.parse(req.query);
       const stamp = new Date().toISOString().replace(/[:.]/g, "-");
       return reply

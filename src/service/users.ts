@@ -2,6 +2,8 @@ import { randomBytes, scrypt, timingSafeEqual } from "node:crypto";
 import { and, eq, isNull, sql } from "drizzle-orm";
 import type { Database } from "../db/client.js";
 import {
+  entities,
+  projects,
   sessions,
   tokens,
   users,
@@ -69,6 +71,11 @@ export function normalizeEmail(email: string): string {
   return email.trim().toLowerCase();
 }
 
+/** Display name for someone who gave none: the part of the email before @. */
+export function defaultName(email: string): string {
+  return normalizeEmail(email).split("@")[0] || "user";
+}
+
 export interface Account {
   id: string;
   email: string;
@@ -90,7 +97,7 @@ export async function hasUsers(db: Database["db"]): Promise<boolean> {
 export async function createOwner(
   scope: Scope,
   db: Database["db"],
-  input: { email: string; name: string; password: string }
+  input: { email: string; name?: string | null; password: string }
 ): Promise<Account> {
   const email = normalizeEmail(input.email);
   const passwordHash = await hashPassword(input.password);
@@ -102,7 +109,7 @@ export async function createOwner(
     }
     const [user] = await tx
       .insert(users)
-      .values({ email, name: input.name.trim(), passwordHash })
+      .values({ email, name: input.name?.trim() || defaultName(email), passwordHash })
       .returning();
     await tx
       .insert(workspaceMembers)
@@ -112,6 +119,16 @@ export async function createOwner(
       .set({ userId: user!.id })
       .where(and(eq(tokens.workspaceId, scope.workspaceId), isNull(tokens.userId)));
     await tx.delete(sessions).where(isNull(sessions.userId));
+    // Everything written before accounts existed is the owner's. Projects
+    // keep their default visibility (private) until the owner shares them.
+    await tx
+      .update(projects)
+      .set({ ownerUserId: user!.id, updatedAt: sql`${projects.updatedAt} + interval '1 microsecond'` })
+      .where(and(eq(projects.workspaceId, scope.workspaceId), isNull(projects.ownerUserId)));
+    await tx
+      .update(entities)
+      .set({ authorUserId: user!.id, updatedAt: sql`${entities.updatedAt} + interval '1 microsecond'` })
+      .where(and(eq(entities.workspaceId, scope.workspaceId), isNull(entities.authorUserId)));
     return { id: user!.id, email: user!.email, name: user!.name, role: "owner" as const };
   });
 }
@@ -157,6 +174,14 @@ export async function getAccount(
     )
     .limit(1);
   return row ?? null;
+}
+
+export async function updateProfile(
+  db: Database["db"],
+  userId: string,
+  input: { name: string }
+): Promise<void> {
+  await db.update(users).set({ name: input.name.trim() }).where(eq(users.id, userId));
 }
 
 /**

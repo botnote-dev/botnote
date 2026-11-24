@@ -2,7 +2,7 @@ import { createHash, randomBytes } from "node:crypto";
 import { and, desc, eq } from "drizzle-orm";
 import type { Database } from "../db/client.js";
 import { tokens, type Token } from "../db/schema.js";
-import type { Scope } from "./scope.js";
+import { isAdmin, type Scope } from "./scope.js";
 
 const TOKEN_PREFIX = "bn_";
 
@@ -12,7 +12,7 @@ function sha256(input: string): string {
 
 export interface CreatedToken {
   token: Token;
-  /** The recoverable plaintext token. NULL only for tokens created before 0014. */
+  /** Returned once at creation. Only its hash is stored. */
   plaintext: string;
 }
 
@@ -26,7 +26,13 @@ export async function createToken(
   const prefix = plaintext.slice(0, 11); // bn_ + first 8 hex
   const [row] = await db
     .insert(tokens)
-    .values({ workspaceId: scope.workspaceId, name: input.name, tokenHash, prefix, plaintext })
+    .values({
+      workspaceId: scope.workspaceId,
+      name: input.name,
+      tokenHash,
+      prefix,
+      userId: scope.userId ?? null
+    })
     .returning();
   if (!row) throw new Error("token insert returned no row");
   labelCache.delete(scope.workspaceId);
@@ -56,18 +62,34 @@ export function resetTokenLabelCache(): void {
   labelCache.clear();
 }
 
+/**
+ * A member sees their own tokens; an owner or admin sees everyone's, so a
+ * leaked or forgotten one can be revoked. The plaintext some older tokens
+ * still carry is only ever returned to the token's own person.
+ */
 export async function listTokens(scope: Scope, db: Database["db"]): Promise<Token[]> {
-  return db
+  const inWorkspace = eq(tokens.workspaceId, scope.workspaceId);
+  const rows = await db
     .select()
     .from(tokens)
-    .where(eq(tokens.workspaceId, scope.workspaceId))
+    .where(
+      scope.userId && !isAdmin(scope) ? and(inWorkspace, eq(tokens.userId, scope.userId)) : inWorkspace
+    )
     .orderBy(desc(tokens.createdAt));
+  if (!scope.userId) return rows;
+  return rows.map((t) => (t.userId === scope.userId ? t : { ...t, plaintext: null }));
 }
 
 export async function revokeToken(scope: Scope, db: Database["db"], id: string): Promise<boolean> {
   const res = await db
     .delete(tokens)
-    .where(and(eq(tokens.id, id), eq(tokens.workspaceId, scope.workspaceId)))
+    .where(
+      and(
+        eq(tokens.id, id),
+        eq(tokens.workspaceId, scope.workspaceId),
+        scope.userId && !isAdmin(scope) ? eq(tokens.userId, scope.userId) : undefined
+      )
+    )
     .returning({ id: tokens.id });
   labelCache.delete(scope.workspaceId);
   return res.length > 0;

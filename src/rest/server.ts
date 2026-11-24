@@ -19,6 +19,7 @@ import {
 import { corsOrigins, DEFAULT_PORT, envValue } from "../config.js";
 import type { Database } from "../db/client.js";
 import type { EmbeddingService } from "../service/embedding.js";
+import { ownerMember, resolveMember } from "../service/members.js";
 import { DEFAULT_SCOPE, scopeFor, type Scope } from "../service/scope.js";
 import { consumeSession } from "../service/sessions.js";
 import { hasUsers } from "../service/users.js";
@@ -73,7 +74,8 @@ const OPEN_AUTH_PATHS = [
   "/v1/auth/login",
   "/v1/auth/logout",
   "/v1/auth/status",
-  "/v1/auth/setup"
+  "/v1/auth/setup",
+  "/v1/auth/invite"
 ];
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -275,8 +277,16 @@ export async function buildServer(opts: BuildServerOpts): Promise<FastifyInstanc
     if (authHeader && authHeader.startsWith("Bearer ")) {
       const plaintext = authHeader.slice("Bearer ".length).trim();
       const tok = await consumeToken(opts.db, plaintext);
-      if (tok) {
+      if (tok && !accounts.hasUsers) {
         req.scope = scopeFor(tok.workspaceId);
+        req.actorTokenId = tok.id;
+        return;
+      }
+      // Once accounts exist a token acts for its person. One whose person
+      // was removed no longer works.
+      const member = tok?.userId ? await resolveMember(opts.db, tok.workspaceId, tok.userId) : null;
+      if (tok && member) {
+        req.scope = scopeFor(tok.workspaceId, member);
         req.actorTokenId = tok.id;
         return;
       }
@@ -289,16 +299,32 @@ export async function buildServer(opts: BuildServerOpts): Promise<FastifyInstanc
     const cookieToken = req.cookies?.botnote_session;
     if (cookieToken) {
       const session = await consumeSession(opts.db, cookieToken);
-      if (session && (session.userId || !accounts.hasUsers)) {
+      if (session && !session.userId && !accounts.hasUsers) {
         req.scope = scopeFor(session.workspaceId);
-        req.userId = session.userId;
+        req.sessionId = session.id;
+        return;
+      }
+      const member = session?.userId
+        ? await resolveMember(opts.db, session.workspaceId, session.userId)
+        : null;
+      if (session && member) {
+        req.scope = scopeFor(session.workspaceId, member);
+        req.userId = member.userId;
         req.sessionId = session.id;
         return;
       }
     }
 
-    if (!auth.required && !accounts.hasUsers) return;
-    if (isTrustedWithoutCredential(req, auth)) return;
+    if (!accounts.hasUsers) {
+      if (!auth.required || isTrustedWithoutCredential(req, auth)) return;
+    } else if (isTrustedWithoutCredential(req, auth)) {
+      // A direct connection from the daemon's own machine acts as the owner.
+      const owner = await ownerMember(opts.db, defaultScope.workspaceId);
+      if (owner) {
+        req.scope = scopeFor(defaultScope.workspaceId, owner);
+        return;
+      }
+    }
 
     if (mcp) {
       return reply.code(401).send({

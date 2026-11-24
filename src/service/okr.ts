@@ -3,7 +3,7 @@ import type { Database } from "../db/client.js";
 import { edges, entities, projects, type Entity } from "../db/schema.js";
 import { normalizeDueAt } from "./dates.js";
 import { addWorklogEntry, get, resolveEntityId, update, write } from "./entities.js";
-import type { Scope } from "./scope.js";
+import { entityInScope, projectVisible, type Scope } from "./scope.js";
 import type {
   CreateKeyResultInput,
   CreateObjectiveInput,
@@ -269,7 +269,13 @@ export async function createObjective(
   const [project] = await db
     .select({ id: projects.id })
     .from(projects)
-    .where(and(eq(projects.id, input.projectId), eq(projects.workspaceId, scope.workspaceId)))
+    .where(
+      and(
+        eq(projects.id, input.projectId),
+        eq(projects.workspaceId, scope.workspaceId),
+        projectVisible(scope)
+      )
+    )
     .limit(1);
   if (!project) throw clientError(`project ${input.projectId} not found`, 404);
 
@@ -365,7 +371,7 @@ export async function createKeyResult(
       .where(
         and(
           eq(entities.idempotencyKey, input.idempotencyKey),
-          eq(entities.workspaceId, scope.workspaceId)
+          entityInScope(scope)
         )
       )
       .limit(1);
@@ -524,7 +530,7 @@ export async function getOkr(
   const openOnly = inArray(entities.status, ["open", "in_progress"]);
 
   const objectiveConds = [
-    eq(entities.workspaceId, scope.workspaceId),
+    entityInScope(scope),
     eq(entities.kind, "objective"),
     isNull(entities.deletedAt),
     sql`${entities.metadata} ->> 'quarter' = ${quarter}`
@@ -545,7 +551,7 @@ export async function getOkr(
 
   const objectiveIds = objectiveRows.map((o) => o.id);
   const krConds = [
-    eq(entities.workspaceId, scope.workspaceId),
+    entityInScope(scope),
     eq(entities.kind, "key_result"),
     isNull(entities.deletedAt)
   ];
@@ -636,7 +642,7 @@ async function findReview(
     .from(entities)
     .where(
       and(
-        eq(entities.workspaceId, scope.workspaceId),
+        entityInScope(scope),
         eq(entities.kind, "okr_review"),
         isNull(entities.deletedAt),
         sql`${entities.metadata} ->> 'type' = ${type}`,
@@ -674,7 +680,7 @@ export async function recordReview(
       .where(
         and(
           eq(entities.idempotencyKey, input.idempotencyKey),
-          eq(entities.workspaceId, scope.workspaceId)
+          entityInScope(scope)
         )
       )
       .limit(1);
@@ -740,7 +746,7 @@ export async function listReviews(
   input: ListReviewsInput
 ): Promise<Entity[]> {
   const conds = [
-    eq(entities.workspaceId, scope.workspaceId),
+    entityInScope(scope),
     eq(entities.kind, "okr_review"),
     isNull(entities.deletedAt)
   ];
@@ -800,7 +806,7 @@ async function refLabels(
     .select({ id: entities.id, kind: entities.kind, seq: entities.sequenceId, key: projects.key })
     .from(entities)
     .leftJoin(projects, eq(entities.projectId, projects.id))
-    .where(and(eq(entities.workspaceId, scope.workspaceId), inArray(entities.id, ids)));
+    .where(and(entityInScope(scope), inArray(entities.id, ids)));
   return new Map(
     rows.map((r) => [
       r.id,
@@ -842,7 +848,7 @@ export async function briefOkr(
           .from(entities)
           .where(
             and(
-              eq(entities.workspaceId, scope.workspaceId),
+              entityInScope(scope),
               eq(entities.kind, "okr_review"),
               isNull(entities.deletedAt),
               sql`${entities.metadata} ->> 'type' = 'weekly'`,

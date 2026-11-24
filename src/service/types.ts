@@ -5,6 +5,7 @@ import {
   ENTITY_KINDS,
   FEEDBACK_CATEGORIES,
   PROJECT_STATUSES,
+  PROJECT_VISIBILITIES,
   RECURRENCE_ANCHORS
 } from "../db/schema.js";
 
@@ -297,6 +298,8 @@ const IconName = z
   .max(40)
   .regex(/^[a-z0-9_-]+$/, "icon must be a lowercase identifier");
 
+export const ProjectVisibilityEnum = z.enum(PROJECT_VISIBILITIES);
+
 export const CreateProjectInput = z
   .object({
     key: z
@@ -308,7 +311,8 @@ export const CreateProjectInput = z
     status: ProjectStatusEnum.default("active"),
     color: HexColor.default("#5e6ad2"),
     icon: IconName.default("circle"),
-    agentsMd: z.string().default("")
+    agentsMd: z.string().default(""),
+    visibility: ProjectVisibilityEnum.optional()
   })
   .strict();
 export type CreateProjectInput = z.infer<typeof CreateProjectInput>;
@@ -319,7 +323,8 @@ export const UpdateProjectInput = z
     status: ProjectStatusEnum.optional(),
     color: HexColor.optional(),
     icon: IconName.optional(),
-    agentsMd: z.string().optional()
+    agentsMd: z.string().optional(),
+    visibility: ProjectVisibilityEnum.optional()
   })
   .strict();
 export type UpdateProjectInput = z.infer<typeof UpdateProjectInput>;

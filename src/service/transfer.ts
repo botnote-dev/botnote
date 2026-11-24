@@ -3,6 +3,7 @@ import { z } from "zod";
 import type { Database } from "../db/client.js";
 import {
   ACTOR_KINDS,
+  PROJECT_VISIBILITIES,
   EDGE_KINDS,
   VECTOR_DIMENSIONS,
   edges,
@@ -16,7 +17,7 @@ import {
   workspaces
 } from "../db/schema.js";
 import { VERSION } from "../version.js";
-import type { Scope } from "./scope.js";
+import { assertOwner, type Scope } from "./scope.js";
 import { EntityKindEnum, Uuid } from "./types.js";
 
 /**
@@ -87,6 +88,7 @@ export async function* exportWorkspace(
   db: Database["db"],
   opts: ExportOptions = {}
 ): AsyncGenerator<string> {
+  assertOwner(scope);
   const wsId = scope.workspaceId;
   const [ws] = await db.select().from(workspaces).where(eq(workspaces.id, wsId)).limit(1);
   if (!ws) throw clientError(`workspace ${wsId} not found`, 404);
@@ -240,6 +242,7 @@ const ProjectRecord = z.object({
   color: z.string().default("#5e6ad2"),
   icon: z.string().default("circle"),
   agentsMd: z.string().default(""),
+  visibility: z.enum(PROJECT_VISIBILITIES).default("private"),
   archivedAt: IsoNull,
   nextSeq: z.number().int().min(1).default(1),
   createdAt: Iso,
@@ -482,7 +485,13 @@ class Importer {
     if (fresh.length === 0) return;
     const inserted = await this.db
       .insert(projects)
-      .values(fresh.map((p) => ({ ...p, workspaceId: this.scope.workspaceId })))
+      .values(
+        fresh.map((p) => ({
+          ...p,
+          workspaceId: this.scope.workspaceId,
+          ownerUserId: this.scope.userId ?? null
+        }))
+      )
       .onConflictDoNothing()
       .returning({ id: projects.id });
     const insertedIds = new Set(inserted.map((r) => r.id));
@@ -541,6 +550,7 @@ class Importer {
       return {
         ...e,
         workspaceId: this.scope.workspaceId,
+        authorUserId: this.scope.userId ?? null,
         actorTokenId: e.actorTokenId && knownTokens.has(e.actorTokenId) ? e.actorTokenId : null,
         bodyVec: vec
       };
@@ -758,6 +768,7 @@ export async function importWorkspace(
   db: Database["db"],
   lines: AsyncIterable<string> | Iterable<string>
 ): Promise<ImportReport> {
+  assertOwner(scope);
   const importer = new Importer(scope, db);
   let header: z.infer<typeof HeaderRecord> | null = null;
   let lineNo = 0;

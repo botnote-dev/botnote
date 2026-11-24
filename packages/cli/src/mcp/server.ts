@@ -502,7 +502,7 @@ export function buildMcpServer(ctx: McpServerContext): McpServer {
       const projects = await c.listProjects({ includeArchived });
       const lines = projects.map(
         (p) =>
-          `${p.key.padEnd(10)} ${p.name}  (id: ${p.id}, status: ${p.status}, icon: ${p.icon}, color: ${p.color}${
+          `${p.key.padEnd(10)} ${p.name}  (id: ${p.id}, status: ${p.status}${p.visibility ? `, ${p.visibility}` : ""}, icon: ${p.icon}, color: ${p.color}${
             p.archivedAt ? `, archived: ${p.archivedAt}` : ""
           })`
       );
@@ -562,7 +562,8 @@ export function buildMcpServer(ctx: McpServerContext): McpServer {
         "- `status`: planned, active, watching, paused, or archived. Use archived for completed, canceled, or historical projects.\n" +
         "- `color`: hex like '#5e6ad2' (Linear blue) by default. Pick a color that contrasts with the existing palette.\n" +
         "- `icon`: lowercase kebab name from lucide-react (e.g. 'rocket', 'brain', 'package', 'archive').\n" +
-        "- `agentsMd`: write project-level conventions agents should follow (test commands, deploy steps, important gotchas). Surfaced in opening_brief.",
+        "- `agentsMd`: write project-level conventions agents should follow (test commands, deploy steps, important gotchas). Surfaced in opening_brief.\n" +
+        "- `visibility`: omit for private (only the person you work for sees it). Pass 'shared' only when they ask to share the project with everyone on the instance.",
       annotations: {
         readOnlyHint: false,
         destructiveHint: false,
@@ -575,10 +576,11 @@ export function buildMcpServer(ctx: McpServerContext): McpServer {
         status: z.enum(PROJECT_STATUSES).default("active"),
         color: HexColor.default("#5e6ad2"),
         icon: IconName.default("circle"),
-        agentsMd: z.string().default("")
+        agentsMd: z.string().default(""),
+        visibility: z.enum(["private", "shared"]).optional()
       }
     },
-    async ({ key, name, status, color, icon, agentsMd }) => {
+    async ({ key, name, status, color, icon, agentsMd, visibility }) => {
       try {
         const existing = await c.getProjectByKey(key);
         return {
@@ -587,8 +589,23 @@ export function buildMcpServer(ctx: McpServerContext): McpServer {
       } catch {
         // Not found → continue to create.
       }
-      const p = await c.createProject({ key, name, status, color, icon, agentsMd });
-      return { content: [{ type: "text", text: `created project ${p.key} · ${p.name}\nid: ${p.id}` }] };
+      const p = await c.createProject({
+        key,
+        name,
+        status,
+        color,
+        icon,
+        agentsMd,
+        ...(visibility ? { visibility } : {})
+      });
+      return {
+        content: [
+          {
+            type: "text",
+            text: `created project ${p.key} · ${p.name}${p.visibility ? ` · ${p.visibility}` : ""}\nid: ${p.id}`
+          }
+        ]
+      };
     }
   );
 
@@ -599,7 +616,7 @@ export function buildMcpServer(ctx: McpServerContext): McpServer {
     {
       title: "Update Project",
       description:
-        "Update a project's status, name, color, icon, or AGENTS.md. Use status='archived' for completed, canceled, or historical projects.",
+        "Update a project's status, name, color, icon, AGENTS.md, or visibility. Use status='archived' for completed, canceled, or historical projects. Only the project's owner can change `visibility` ('private' or 'shared'); change it only when asked.",
       annotations: {
         readOnlyHint: false,
         destructiveHint: true,
@@ -612,7 +629,8 @@ export function buildMcpServer(ctx: McpServerContext): McpServer {
         status: z.enum(PROJECT_STATUSES).optional(),
         color: HexColor.optional(),
         icon: IconName.optional(),
-        agentsMd: z.string().optional()
+        agentsMd: z.string().optional(),
+        visibility: z.enum(["private", "shared"]).optional()
       }
     },
     async ({ projectId, ...fields }) => {
@@ -624,7 +642,7 @@ export function buildMcpServer(ctx: McpServerContext): McpServer {
         content: [
           {
             type: "text",
-            text: `updated project ${p.key} · ${p.name} · ${p.status}${p.archivedAt ? " (archived)" : ""}`
+            text: `updated project ${p.key} · ${p.name} · ${p.status}${p.visibility ? ` · ${p.visibility}` : ""}${p.archivedAt ? " (archived)" : ""}`
           }
         ]
       };

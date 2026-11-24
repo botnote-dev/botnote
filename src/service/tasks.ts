@@ -19,7 +19,7 @@ import { entities, recurrenceExceptions, recurrenceRules, type Entity } from "..
 import { blockersFor, type WithBlockers } from "./blockers.js";
 import { hierarchyFor, type WithHierarchy } from "./hierarchy.js";
 import { buildRRule, normalizeOccurrenceDueAt } from "./recurrence.js";
-import type { Scope } from "./scope.js";
+import { entityInScope, type Scope } from "./scope.js";
 import type { TasksRangeInput } from "./types.js";
 
 export interface VirtualOccurrence {
@@ -73,7 +73,7 @@ export async function tasksRange(
 ): Promise<TasksRangeResult> {
   const now = new Date();
 
-  const inWorkspace = eq(entities.workspaceId, scope.workspaceId);
+  const inWorkspace = entityInScope(scope);
   const projectFilter = input.projectIds?.length
     ? inArray(entities.projectId, input.projectIds)
     : undefined;
@@ -310,7 +310,7 @@ async function expandVirtualOccurrences(
     .select()
     .from(entities)
     .where(
-      and(eq(entities.workspaceId, scope.workspaceId), inArray(entities.id, uniqueDisplaySourceIds))
+      and(entityInScope(scope), inArray(entities.id, uniqueDisplaySourceIds))
     );
   const displaySourceById = new Map<string, Entity>(
     displaySourceRows.map((e) => [e.id, e])

@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, lte, or } from "drizzle-orm";
+import { and, asc, desc, eq, lte, or, sql } from "drizzle-orm";
 import rrulePkg from "rrule";
 import type { Database, Executor } from "../db/client.js";
 import {
@@ -9,7 +9,7 @@ import {
   type RecurrenceRule
 } from "../db/schema.js";
 import { allDayDueAtInZone, normalizeDueAt } from "./dates.js";
-import type { Scope } from "./scope.js";
+import { entityInScope, type Scope } from "./scope.js";
 import type {
   RecurrenceInput,
   SplitRecurrenceInput,
@@ -232,7 +232,7 @@ async function fetchEntityInScope(scope: Scope, db: Database["db"], id: string):
   const rows = await db
     .select()
     .from(entities)
-    .where(and(eq(entities.id, id), eq(entities.workspaceId, scope.workspaceId)))
+    .where(and(eq(entities.id, id), entityInScope(scope)))
     .limit(1);
   const row = rows[0];
   if (!row) throw clientError(`entity ${id} not found`, 404);
@@ -240,7 +240,11 @@ async function fetchEntityInScope(scope: Scope, db: Database["db"], id: string):
 }
 
 function ruleInScope(scope: Scope, ruleId: string) {
-  return and(eq(recurrenceRules.id, ruleId), eq(recurrenceRules.workspaceId, scope.workspaceId));
+  return and(
+    eq(recurrenceRules.id, ruleId),
+    eq(recurrenceRules.workspaceId, scope.workspaceId),
+    sql`${recurrenceRules.seriesId} IN (SELECT entities.id FROM entities WHERE ${entityInScope(scope)})`
+  );
 }
 
 export async function findRuleForTask(
@@ -623,6 +627,7 @@ async function insertNextOccurrence(
     status: "open",
     parentId: occurrence.parentId,
     actorKind: "system",
+    authorUserId: occurrence.authorUserId,
     metadata,
     dueAt: nextDueAt,
     priority: (baseline && "priority" in baseline ? baseline.priority : null) ?? occurrence.priority,

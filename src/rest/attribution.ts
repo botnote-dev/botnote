@@ -10,6 +10,8 @@
 export interface ActorInfo {
   kind: string;
   label: string;
+  /** The person who wrote it, or whose agent did. Absent before accounts. */
+  user?: string;
 }
 
 const MAX_DEPTH = 8;
@@ -17,6 +19,7 @@ const MAX_DEPTH = 8;
 type Attributable = {
   actorKind: string;
   actorTokenId: string | null;
+  authorUserId?: string | null;
   actor?: ActorInfo;
 };
 
@@ -59,7 +62,8 @@ export function actorLabelFor(
  */
 export async function attachActorLabels(
   payload: unknown,
-  loadLabels: () => Promise<ReadonlyMap<string, string>>
+  loadLabels: () => Promise<ReadonlyMap<string, string>>,
+  loadUserNames?: (ids: string[]) => Promise<ReadonlyMap<string, string>>
 ): Promise<unknown> {
   if (payload === null || typeof payload !== "object") return payload;
   const targets: Attributable[] = [];
@@ -67,8 +71,17 @@ export async function attachActorLabels(
   if (targets.length === 0) return payload;
   const needsLabels = targets.some((t) => t.actorTokenId != null);
   const labels = needsLabels ? await loadLabels() : new Map<string, string>();
+  const userIds = targets.map((t) => t.authorUserId).filter((id): id is string => !!id);
+  const names =
+    loadUserNames && userIds.length > 0 ? await loadUserNames(userIds) : new Map<string, string>();
   for (const t of targets) {
-    t.actor = { kind: t.actorKind, label: actorLabelFor(t, labels) };
+    const user = t.authorUserId ? names.get(t.authorUserId) : undefined;
+    const tokenLabel = t.actorTokenId ? labels.get(t.actorTokenId) : undefined;
+    t.actor = {
+      kind: t.actorKind,
+      label: tokenLabel ?? (t.actorKind === "human" && user ? user : t.actorKind),
+      ...(user ? { user } : {})
+    };
   }
   return payload;
 }

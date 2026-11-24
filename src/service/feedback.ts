@@ -2,7 +2,7 @@ import { and, desc, eq, isNull, sql } from "drizzle-orm";
 import type { Database } from "../db/client.js";
 import { entities, type Entity, type FeedbackCategory } from "../db/schema.js";
 import { write } from "./entities.js";
-import type { Scope } from "./scope.js";
+import { entityInScope, type Scope } from "./scope.js";
 import type { CreateFeedbackInput, ListFeedbackInput, WriteAttribution } from "./types.js";
 
 /**
@@ -45,7 +45,7 @@ export async function listFeedback(
   input: ListFeedbackInput
 ): Promise<Entity[]> {
   const conds = [
-    eq(entities.workspaceId, scope.workspaceId),
+    entityInScope(scope),
     eq(entities.kind, "feedback"),
     isNull(entities.deletedAt)
   ];

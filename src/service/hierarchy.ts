@@ -1,7 +1,7 @@
 import { sql } from "drizzle-orm";
 import type { Database } from "../db/client.js";
 import { toEntityRef, type EntityRef, type RefRow } from "./blockers.js";
-import type { Scope } from "./scope.js";
+import { entityInScope, type Scope } from "./scope.js";
 
 /** Sub-task tallies for a parent task. Closed means done or rejected. */
 export interface SubtaskCounts {
@@ -53,7 +53,7 @@ export async function hierarchyFor(
     ) x
     JOIN entities p ON p.id = x.parent_id
     LEFT JOIN projects pr ON pr.id = p.project_id
-    WHERE p.workspace_id = ${scope.workspaceId}::uuid
+    WHERE ${entityInScope(scope, sql`p`)}
       AND p.deleted_at IS NULL
     ORDER BY x.child_id, x.via, x.linked_at
   `);
@@ -80,7 +80,7 @@ export async function hierarchyFor(
     ) l
     JOIN entities c ON c.id = l.child_id
     WHERE c.kind = 'task'
-      AND c.workspace_id = ${scope.workspaceId}::uuid
+      AND ${entityInScope(scope, sql`c`)}
       AND c.deleted_at IS NULL
     GROUP BY l.parent_id
   `);
