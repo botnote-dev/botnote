@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, inArray, isNull, sql } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, isNull, or, sql } from "drizzle-orm";
 import type { Database } from "../db/client.js";
 import { entities, type Entity, type Project } from "../db/schema.js";
 import { blockersFor, type Blocker } from "./blockers.js";
@@ -73,6 +73,11 @@ export async function openingBrief(
         and(
           projectFilter,
           eq(entities.kind, "task"),
+          // In a shared project a session opens with its own person's work,
+          // plus what nobody has taken yet.
+          scope.userId
+            ? or(eq(entities.assigneeUserId, scope.userId), isNull(entities.assigneeUserId))
+            : undefined,
           inArray(entities.status, ["open", "in_progress"]),
           isNull(entities.deletedAt)
         )

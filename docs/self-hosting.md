@@ -99,6 +99,9 @@ sets their own password and creates their own API tokens.
   to **Shared** in the project's settings. A shared project is open to every
   member, to read and to write.
 - Tasks and notes outside any project belong to whoever wrote them.
+- A task belongs to whoever created it, shown as their initials on the board.
+  Click the avatar to give it to someone else or leave it unassigned. An
+  agent starts each session with its own person's tasks.
 - No role sees another person's private project in the app, the owner
   included. The owner can still export the whole instance as a backup, and
   whoever runs the server can read the database.

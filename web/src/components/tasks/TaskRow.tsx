@@ -8,6 +8,7 @@ import { useDrawer } from "../../hooks/useDrawer";
 import { useUndoableDelete } from "../../hooks/useUndoableDelete";
 import { displayTitle, isUntitled } from "../../lib/entityTitle";
 import { TagChip } from "../TagChip";
+import { AssigneeButton } from "./Assignee";
 import { ParentChip, SubtaskProgress } from "./hierarchy";
 import { PriorityIcon, PRIORITY_LABEL, RecurrenceIcon } from "./icons";
 import { StatusPickerButton } from "./StatusPickerButton";
@@ -91,6 +92,8 @@ export function TaskRow({
           <RecurrenceIcon size={12} />
         </span>
       )}
+
+      {!compact && <AssigneeButton task={task} size={16} />}
 
       {visibleDate && (
         <span

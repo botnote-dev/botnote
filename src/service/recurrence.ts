@@ -628,6 +628,7 @@ async function insertNextOccurrence(
     parentId: occurrence.parentId,
     actorKind: "system",
     authorUserId: occurrence.authorUserId,
+    assigneeUserId: occurrence.assigneeUserId,
     metadata,
     dueAt: nextDueAt,
     priority: (baseline && "priority" in baseline ? baseline.priority : null) ?? occurrence.priority,

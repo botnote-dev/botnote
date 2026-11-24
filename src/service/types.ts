@@ -38,6 +38,12 @@ export const Uuid = z.string().uuid();
 
 /** Internal write input — used by entities.write(). REST/MCP entry points
  *  validate against the kind-specific schemas below first. */
+/**
+ * A person to assign a task to: "me", "none", a member's user id, their
+ * email, or their display name.
+ */
+export const AssigneeRef = z.string().trim().min(1).max(320);
+
 export const WriteInput = z.object({
   kind: EntityKindEnum,
   projectId: Uuid.nullish(),
@@ -56,6 +62,7 @@ export const WriteInput = z.object({
   pinned: z.boolean().default(false),
   /** Explicit completion timestamp; only valid on a task written with status 'done'. */
   completedAt: z.coerce.date().nullish(),
+  assignee: AssigneeRef.nullish(),
   idempotencyKey: z.string().min(1).max(200).nullish()
 });
 export type WriteInput = z.infer<typeof WriteInput>;
@@ -80,6 +87,8 @@ export const CreateTaskInput = z.object({
   priority: PriorityEnum.default("none"),
   /** Backdated completion timestamp; only valid together with status 'done'. */
   completedAt: z.coerce.date().nullish(),
+  /** Defaults to the person creating the task. */
+  assignee: AssigneeRef.nullish(),
   idempotencyKey: z.string().min(1).max(200).nullish()
 });
 export type CreateTaskInput = z.infer<typeof CreateTaskInput>;
@@ -172,6 +181,8 @@ export const UpdateInput = z
     pinned: z.boolean().optional(),
     /** Override the completion timestamp of a done task; null clears it. */
     completedAt: z.coerce.date().nullable().optional(),
+    /** Tasks only. null or "none" unassigns. */
+    assignee: AssigneeRef.nullable().optional(),
     recurrenceScope: z.enum(["this", "future"]).optional()
   })
   .refine((v) => !(v.body !== undefined && v.bodyAppend !== undefined), {
@@ -271,7 +282,9 @@ export const TasksRangeInput = z.object({
   projectIds: z.array(Uuid).nullish(),
   includeBacklog: z.boolean().default(true),
   includeDone: z.boolean().default(false),
-  includeVirtualRecurrences: z.boolean().default(false)
+  includeVirtualRecurrences: z.boolean().default(false),
+  /** "mine" is the caller's tasks plus unassigned ones; omit for everyone's. */
+  assignee: z.union([z.literal("mine"), z.literal("unassigned"), AssigneeRef]).nullish()
 });
 export type TasksRangeInput = z.infer<typeof TasksRangeInput>;
 

@@ -262,7 +262,8 @@ export async function registerRoutes(
     return attachActorLabels(
       payload,
       () => tokenLabels(req.scope, ctx.db),
-      (ids) => userNames(ctx.db, ids)
+      (ids) => userNames(ctx.db, ids),
+      req.scope.userId ?? null
     );
   });
 
