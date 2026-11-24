@@ -69,7 +69,12 @@ export interface Entity {
   actorKind: ActorKind;
   actorTokenId?: string | null;
   /** Resolved author: the API token's name when written through one, else actorKind. */
-  actor?: { kind: string; label: string };
+  actor?: { kind: string; label: string; user?: string };
+  /** The person behind the write. null before the instance had accounts. */
+  authorUserId?: string | null;
+  /** Tasks only: whose task it is. */
+  assigneeUserId?: string | null;
+  assignee?: { id: string; name: string; me: boolean } | null;
   idempotencyKey: string | null;
   parentId: string | null;
   metadata: Record<string, unknown>;
@@ -332,6 +337,8 @@ export interface UpdateEntityInput {
   priority?: Priority;
   pinned?: boolean;
   completedAt?: string | null;
+  /** "me", "none", or a member's user id, email or name. */
+  assignee?: string;
   recurrenceScope?: "this" | "future";
 }
 

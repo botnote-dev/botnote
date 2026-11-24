@@ -9,9 +9,9 @@ import {
   SlidersHorizontalIcon,
   UsersIcon
 } from "@phosphor-icons/react";
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { useParams, useSearchParams } from "react-router-dom";
-import { useMe, useProjectByKey, useProjectTasks } from "../api/hooks";
+import { useMe, useMembers, useProjectByKey, useProjectTasks } from "../api/hooks";
 import { KanbanBoard } from "../components/project/KanbanBoard";
 import { NotesList } from "../components/project/NotesList";
 import { ProjectIcon } from "../components/ProjectIcon";
@@ -29,16 +29,26 @@ export function ProjectPage() {
   const { data: tasks } = useProjectTasks(project?.id);
   const { open: openModal } = useModals();
   const { data: me } = useMe();
+  const { data: members } = useMembers();
+  const [whose, setWhose] = useState<"everyone" | "mine">("everyone");
+  const canFilter = Boolean(me) && (members?.length ?? 0) > 1 && project?.visibility === "shared";
+  const shownTasks = useMemo(
+    () =>
+      canFilter && whose === "mine"
+        ? (tasks ?? []).filter((t) => t.assigneeUserId === me?.id)
+        : (tasks ?? []),
+    [tasks, canFilter, whose, me?.id]
+  );
 
   const counts = useMemo(() => {
-    const t = tasks ?? [];
+    const t = shownTasks;
     return {
       todo: t.filter((x) => x.status === "open").length,
       in_progress: t.filter((x) => x.status === "in_progress").length,
       done: t.filter((x) => x.status === "done").length,
       tasks: t.length
     };
-  }, [tasks]);
+  }, [shownTasks]);
 
   if (!project) {
     return (
@@ -88,6 +98,18 @@ export function ProjectPage() {
           />
         </div>
         <div className="flex shrink-0 items-center gap-2">
+          {canFilter && tab === "tasks" && (
+            <Tabs
+              variant="segmented"
+              size="sm"
+              value={whose}
+              onValueChange={(v) => setWhose(v as "everyone" | "mine")}
+              tabs={[
+                { value: "everyone", label: "Everyone" },
+                { value: "mine", label: "Mine" }
+              ]}
+            />
+          )}
           <Tabs
             variant="segmented"
             size="sm"
@@ -129,7 +151,7 @@ export function ProjectPage() {
       </div>
 
       <div className="flex-1 min-h-0 overflow-hidden">
-        {tab === "tasks" && <KanbanBoard tasks={tasks ?? []} project={project} />}
+        {tab === "tasks" && <KanbanBoard tasks={shownTasks} project={project} />}
         {tab === "notes" && <NotesList project={project} />}
       </div>
     </div>

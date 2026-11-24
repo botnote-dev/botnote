@@ -1,3 +1,4 @@
+import { AssigneeButton } from "./tasks/Assignee";
 import { markdown } from "@codemirror/lang-markdown";
 import { Button } from "@cloudflare/kumo/components/button";
 import { Input, InputArea } from "@cloudflare/kumo/components/input";
@@ -43,6 +44,7 @@ import {
   useSkipOccurrence,
   useSplitRecurrence,
   useStopRecurrence,
+  useMembers,
   useUpdateEntity,
   useWorklog
 } from "../api/hooks";
@@ -1123,6 +1125,7 @@ function MetaRow({
   occurrenceScope?: "this" | "future";
   setOccurrenceScope?: (scope: "this" | "future") => void;
 }) {
+  const { data: members } = useMembers();
   return (
     <div className="grid auto-rows-[minmax(26px,auto)] grid-cols-[80px_1fr] items-center gap-x-3 gap-y-1.5 text-xs">
       {isTask && (
@@ -1208,6 +1211,15 @@ function MetaRow({
                     { value: "this", label: "This occurrence only" }
                   ]}
                 />
+              </span>
+            </>
+          )}
+
+          {task && members && members.length > 1 && (
+            <>
+              <MetaLabel>Assignee</MetaLabel>
+              <span className="flex min-w-0 items-center">
+                <AssigneeButton task={task} size={16} showName className="-ml-1" />
               </span>
             </>
           )}

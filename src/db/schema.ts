@@ -133,6 +133,8 @@ export const entities = pgTable(
     // The person who wrote it, or whose agent did. Content outside a project
     // is visible to this person only.
     authorUserId: uuid("author_user_id").references(() => users.id, { onDelete: "set null" }),
+    // Tasks only: whose task it is. null is unassigned.
+    assigneeUserId: uuid("assignee_user_id").references(() => users.id, { onDelete: "set null" }),
     idempotencyKey: text("idempotency_key"),
     parentId: uuid("parent_id"),
     bodyTsv: tsvector("body_tsv"),

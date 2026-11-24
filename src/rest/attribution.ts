@@ -14,13 +14,22 @@ export interface ActorInfo {
   user?: string;
 }
 
+/** Whose task it is. `me` is true when it is the caller's. */
+export interface AssigneeInfo {
+  id: string;
+  name: string;
+  me: boolean;
+}
+
 const MAX_DEPTH = 8;
 
 type Attributable = {
   actorKind: string;
   actorTokenId: string | null;
   authorUserId?: string | null;
+  assigneeUserId?: string | null;
   actor?: ActorInfo;
+  assignee?: AssigneeInfo | null;
 };
 
 function isAttributable(node: Record<string, unknown>): node is Attributable {
@@ -63,7 +72,8 @@ export function actorLabelFor(
 export async function attachActorLabels(
   payload: unknown,
   loadLabels: () => Promise<ReadonlyMap<string, string>>,
-  loadUserNames?: (ids: string[]) => Promise<ReadonlyMap<string, string>>
+  loadUserNames?: (ids: string[]) => Promise<ReadonlyMap<string, string>>,
+  callerUserId?: string | null
 ): Promise<unknown> {
   if (payload === null || typeof payload !== "object") return payload;
   const targets: Attributable[] = [];
@@ -71,7 +81,9 @@ export async function attachActorLabels(
   if (targets.length === 0) return payload;
   const needsLabels = targets.some((t) => t.actorTokenId != null);
   const labels = needsLabels ? await loadLabels() : new Map<string, string>();
-  const userIds = targets.map((t) => t.authorUserId).filter((id): id is string => !!id);
+  const userIds = targets
+    .flatMap((t) => [t.authorUserId, t.assigneeUserId])
+    .filter((id): id is string => !!id);
   const names =
     loadUserNames && userIds.length > 0 ? await loadUserNames(userIds) : new Map<string, string>();
   for (const t of targets) {
@@ -82,6 +94,13 @@ export async function attachActorLabels(
       label: tokenLabel ?? (t.actorKind === "human" && user ? user : t.actorKind),
       ...(user ? { user } : {})
     };
+    if ("assigneeUserId" in t) {
+      const name = t.assigneeUserId ? names.get(t.assigneeUserId) : undefined;
+      t.assignee =
+        t.assigneeUserId && name
+          ? { id: t.assigneeUserId, name, me: t.assigneeUserId === callerUserId }
+          : null;
+    }
   }
   return payload;
 }

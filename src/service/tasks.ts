@@ -19,6 +19,7 @@ import { entities, recurrenceExceptions, recurrenceRules, type Entity } from "..
 import { blockersFor, type WithBlockers } from "./blockers.js";
 import { hierarchyFor, type WithHierarchy } from "./hierarchy.js";
 import { buildRRule, normalizeOccurrenceDueAt } from "./recurrence.js";
+import { resolveAssignee } from "./members.js";
 import { entityInScope, type Scope } from "./scope.js";
 import type { TasksRangeInput } from "./types.js";
 
@@ -66,6 +67,19 @@ export interface TasksRangeResult {
  * or backlog. Overdue wins over scheduled, and undated in_progress work sits
  * in backlog when backlog is requested, otherwise on today.
  */
+async function assigneeFilter(
+  scope: Scope,
+  db: Database["db"],
+  ref: string | null
+): Promise<SQL | null> {
+  if (!ref || !scope.userId) return null;
+  if (ref === "mine") {
+    return or(eq(entities.assigneeUserId, scope.userId), isNull(entities.assigneeUserId))!;
+  }
+  const userId = await resolveAssignee(scope, db, ref);
+  return userId ? eq(entities.assigneeUserId, userId) : isNull(entities.assigneeUserId);
+}
+
 export async function tasksRange(
   scope: Scope,
   db: Database["db"],
@@ -91,8 +105,11 @@ export async function tasksRange(
   // and the includeDone toggle. Rejected/archived work is excluded everywhere:
   // includeDone means "show completion history", not "show abandoned work",
   // and a cancelled task with a leftover dueAt is not scheduled for anything.
+  const assignee = await assigneeFilter(scope, db, input.assignee ?? null);
+
   const baseConds: SQL[] = [
     inWorkspace,
+    ...(assignee ? [assignee] : []),
     eq(entities.kind, "task"),
     isNull(entities.deletedAt),
     notStatus("rejected"),

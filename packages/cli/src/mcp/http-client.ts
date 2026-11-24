@@ -318,7 +318,9 @@ export interface EntityDTO {
   actorKind: string;
   actorTokenId?: string | null;
   /** Resolved author: label is the token name when written via a token, else actorKind. */
-  actor?: { kind: string; label: string };
+  actor?: { kind: string; label: string; user?: string };
+  /** Tasks only: whose task it is. Absent on servers without assignees. */
+  assignee?: { id: string; name: string; me: boolean } | null;
   metadata: Record<string, unknown>;
   dueAt: string | null;
   priority: string;
@@ -446,6 +448,7 @@ export interface CreateTaskBody {
   dueAt?: string | null;
   priority?: string;
   completedAt?: string | null;
+  assignee?: string;
   idempotencyKey?: string;
 }
 
@@ -545,6 +548,7 @@ export interface TasksRangeBody {
   includeBacklog?: boolean;
   includeDone?: boolean;
   includeVirtualRecurrences?: boolean;
+  assignee?: string;
 }
 
 export interface VirtualOccurrenceDTO {

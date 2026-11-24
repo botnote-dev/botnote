@@ -2,6 +2,7 @@ import { createHash, randomBytes } from "node:crypto";
 import { and, asc, desc, eq, gt, isNull, sql } from "drizzle-orm";
 import type { Database } from "../db/client.js";
 import {
+  entities,
   projects,
   sessions,
   tokens,
@@ -311,6 +312,13 @@ export async function removeMember(scope: Scope, db: Database["db"], userId: str
       .where(and(eq(tokens.workspaceId, scope.workspaceId), eq(tokens.userId, userId)));
     await tx.delete(sessions).where(eq(sessions.userId, userId));
     await tx.update(users).set({ disabledAt: new Date() }).where(eq(users.id, userId));
+    await tx
+      .update(entities)
+      .set({
+        assigneeUserId: null,
+        updatedAt: sql`${entities.updatedAt} + interval '1 microsecond'`
+      })
+      .where(and(eq(entities.workspaceId, scope.workspaceId), eq(entities.assigneeUserId, userId)));
     if (owner) {
       await tx
         .update(projects)
@@ -332,4 +340,56 @@ export async function userNames(db: Database["db"], ids: string[]): Promise<Map<
       sql`, `
     )})`);
   return new Map(rows.map((r) => [r.id, r.name]));
+}
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * Turn an assignee reference ("me", "none", a user id, an email, or a display
+ * name) into a member's user id, or null for unassigned.
+ */
+export async function resolveAssignee(
+  scope: Scope,
+  db: Database["db"],
+  ref: string | null
+): Promise<string | null> {
+  const value = ref?.trim() ?? "";
+  if (!value || value.toLowerCase() === "none" || value.toLowerCase() === "unassigned") return null;
+  if (value.toLowerCase() === "me") {
+    if (!scope.userId) return null;
+    return scope.userId;
+  }
+  const members = await listMembers(scope, db);
+  const lowered = value.toLowerCase();
+  const matches = UUID_RE.test(value)
+    ? members.filter((m) => m.id === lowered)
+    : members.filter((m) => m.email === lowered || m.name.toLowerCase() === lowered);
+  if (matches.length === 1) return matches[0]!.id;
+  throw clientError(
+    matches.length > 1
+      ? `More than one member is called "${value}". Use their email.`
+      : `No member matches "${value}". Use "me", an email, or a name from the members list.`,
+    400,
+    "unknown_assignee"
+  );
+}
+
+/**
+ * Whether `userId` could see a task at `projectId`: an assignee must be able
+ * to open their own task. Outside a project that is the author alone.
+ */
+export async function canSeeLocation(
+  scope: Scope,
+  db: Database["db"],
+  userId: string,
+  projectId: string | null,
+  authorUserId: string | null
+): Promise<boolean> {
+  if (projectId === null) return authorUserId === userId;
+  const [project] = await db
+    .select({ ownerUserId: projects.ownerUserId, visibility: projects.visibility })
+    .from(projects)
+    .where(and(eq(projects.id, projectId), eq(projects.workspaceId, scope.workspaceId)))
+    .limit(1);
+  return Boolean(project) && (project!.visibility === "shared" || project!.ownerUserId === userId);
 }

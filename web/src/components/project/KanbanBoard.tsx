@@ -1,3 +1,4 @@
+import { AssigneeButton } from "../tasks/Assignee";
 import { Button } from "@cloudflare/kumo/components/button";
 import { PlusIcon } from "@phosphor-icons/react";
 import { format } from "date-fns";
@@ -211,6 +212,7 @@ function KanbanCard({ task, project }: { task: Entity; project: Project }) {
         {task.tags.slice(0, 2).map((t) => (
           <TagChip key={t} tag={t} className="py-0 text-[10px]" />
         ))}
+        <AssigneeButton task={task} size={16} className="ml-auto" />
       </div>
     </div>
   );

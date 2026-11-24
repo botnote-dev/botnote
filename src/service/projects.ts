@@ -1,6 +1,6 @@
-import { and, eq, ne, sql } from "drizzle-orm";
+import { and, eq, isNotNull, ne, sql } from "drizzle-orm";
 import type { Database } from "../db/client.js";
-import { projects, type Project } from "../db/schema.js";
+import { entities, projects, type Project } from "../db/schema.js";
 import { projectVisible, type Scope } from "./scope.js";
 import type { CreateProjectInput, ListProjectsInput, UpdateProjectInput } from "./types.js";
 
@@ -80,6 +80,23 @@ export async function updateProject(
   }
   const [row] = await db.update(projects).set(set).where(visible).returning();
   if (!row) throw new Error(`project ${id} not found`);
+  if (input.visibility === "private" && row.ownerUserId) {
+    // Nobody else can open the project any more, so their tasks in it
+    // become the owner's.
+    await db
+      .update(entities)
+      .set({
+        assigneeUserId: row.ownerUserId,
+        updatedAt: sql`${entities.updatedAt} + interval '1 microsecond'`
+      })
+      .where(
+        and(
+          eq(entities.projectId, row.id),
+          isNotNull(entities.assigneeUserId),
+          ne(entities.assigneeUserId, row.ownerUserId)
+        )
+      );
+  }
   return row;
 }
 

@@ -10,6 +10,7 @@ import {
   upsertModifiedExceptionBaseline,
   type ContentFieldKey
 } from "./recurrence.js";
+import { canSeeLocation, resolveAssignee } from "./members.js";
 import { recordRevision, type RevisionSnapshot } from "./revisions.js";
 import { entityInScope, entityVisible, projectVisible, type Scope } from "./scope.js";
 import type {
@@ -141,6 +142,24 @@ async function assertParentAllowed(
   }
 }
 
+/** An assignee must be able to open the task they are given. */
+async function assertAssignable(
+  scope: Scope,
+  db: Database["db"],
+  assigneeUserId: string | null,
+  projectId: string | null,
+  authorUserId: string | null
+): Promise<void> {
+  if (!assigneeUserId || assigneeUserId === scope.userId) return;
+  if (await canSeeLocation(scope, db, assigneeUserId, projectId, authorUserId)) return;
+  throw clientError(
+    projectId === null
+      ? "A task outside a project is private to you. Move it into a shared project to assign it to someone else."
+      : "That person cannot see this project. Share the project first.",
+    400
+  );
+}
+
 export async function write(scope: Scope, db: Database["db"], input: WriteInput): Promise<Entity> {
   if (input.idempotencyKey) {
     const existing = await db
@@ -159,6 +178,13 @@ export async function write(scope: Scope, db: Database["db"], input: WriteInput)
     throw clientError(`parent entity ${input.parentId} not found`, 404);
   }
   if (input.projectId) await assertProjectInScope(scope, db, input.projectId);
+  // A task is its creator's unless the caller names someone else.
+  let assigneeUserId: string | null = null;
+  if (input.kind === "task") {
+    assigneeUserId =
+      input.assignee == null ? (scope.userId ?? null) : await resolveAssignee(scope, db, input.assignee);
+    await assertAssignable(scope, db, assigneeUserId, input.projectId ?? null, scope.userId ?? null);
+  }
   const [row] = await db
     .insert(entities)
     .values({
@@ -173,6 +199,7 @@ export async function write(scope: Scope, db: Database["db"], input: WriteInput)
       actorKind: input.actorKind,
       actorTokenId: input.actorTokenId ?? null,
       authorUserId: scope.userId ?? null,
+      assigneeUserId,
       metadata: input.metadata,
       dueAt: normalizeDueAt(input.dueAt),
       priority: input.priority,
@@ -282,6 +309,8 @@ export async function update(
   const set: Record<string, unknown> = { ...normalizedFields, updatedAt: new Date() };
   // recurrenceScope is not a DB column — remove it before the UPDATE
   delete set.recurrenceScope;
+  // assignee is a reference resolved to assigneeUserId below.
+  delete set.assignee;
   // bodyAppend is handled via a SQL expression below — remove it from the plain set
   delete set.bodyAppend;
   if (fields.dueAt !== undefined) {
@@ -323,6 +352,8 @@ export async function update(
       .select({
         kind: entities.kind,
         projectId: entities.projectId,
+        authorUserId: entities.authorUserId,
+        assigneeUserId: entities.assigneeUserId,
         status: entities.status,
         title: entities.title,
         body: entities.body,
@@ -350,6 +381,25 @@ export async function update(
       // out of the project keeps it.
       else if (scope.userId) set.authorUserId = scope.userId;
       movesProject = true;
+    }
+    if (prior[0].kind === "task") {
+      const nextProjectId = fields.projectId !== undefined ? fields.projectId : prior[0].projectId;
+      const nextAuthor =
+        movesProject && nextProjectId === null && scope.userId ? scope.userId : prior[0].authorUserId;
+      if (fields.assignee !== undefined) {
+        const assigneeUserId = await resolveAssignee(scope, db, fields.assignee);
+        await assertAssignable(scope, db, assigneeUserId, nextProjectId, nextAuthor);
+        set.assigneeUserId = assigneeUserId;
+      } else if (
+        movesProject &&
+        prior[0].assigneeUserId &&
+        !(await canSeeLocation(scope, db, prior[0].assigneeUserId, nextProjectId, nextAuthor))
+      ) {
+        // The task moved somewhere its assignee cannot follow.
+        set.assigneeUserId = scope.userId ?? null;
+      }
+    } else if (fields.assignee != null) {
+      throw clientError("only tasks have an assignee", 400);
     }
     // Only touch completedAt when the status itself is changing — an unrelated
     // field update on an already-done task must not clear its completion stamp.

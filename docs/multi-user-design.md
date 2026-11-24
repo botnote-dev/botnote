@@ -87,6 +87,28 @@ be added to that sweep.
 user, or the owner of the token. Responses carry `actor.user` (the person's
 name) next to the existing `actor.label` (the token name for agents).
 
+## Assignees
+
+A task has one assignee or none (`entities.assignee_user_id`).
+
+- A new task belongs to whoever creates it: the signed-in person, or the
+  owner of the agent's token. `assignee` on create or update takes `me`,
+  `none`, or a member's id, email or name.
+- An assignee must be able to open the task: any member in a shared project,
+  only the owner in a private one, only the author outside a project. A task
+  that moves where its assignee cannot follow goes to whoever moved it; a
+  project that turns private hands its tasks to its owner; removing a member
+  unassigns theirs.
+- Everyone in a shared project still sees and can edit every task. Assignment
+  says whose it is, it does not restrict access.
+- An agent's session opens with its own person's tasks plus unassigned ones:
+  the opening brief filters that way, and `list_tasks` defaults to it
+  (`assignee: "everyone"` shows all). REST list endpoints return everyone's
+  unless asked (`assignee: "mine"`).
+- The web UI shows the assignee as an initials avatar on cards and rows, with
+  a picker, and a Mine / Everyone switch on shared project boards. Avatars
+  appear only when the instance has more than one member.
+
 ## Known limits
 
 - Project keys are unique across the instance, so creating a key that someone
@@ -98,7 +120,8 @@ name) next to the existing `actor.label` (the token name for agents).
 
 ## Later
 
-1. Assignees on tasks, and "mine / everyone" filters in shared projects.
+1. Uploaded profile pictures; a "mine" filter on the cross-project Tasks and
+   Today pages.
 2. Personal vs team memory inside a shared project: a preference such as
    "reply in Chinese" applies to one person and must not steer a teammate's
    agent. Today such notes belong outside the project.

@@ -144,6 +144,8 @@ function summarizeEntity(e: EntityDTO, projectKey: string | null): string {
   if (e.blockedBy?.length) {
     parts.push(`BLOCKED by ${e.blockedBy.map((b) => b.ref).join(", ")}`);
   }
+  // Only someone else's task is labelled; the caller's own is the default.
+  if (e.assignee && !e.assignee.me) parts.push(`assigned to ${e.assignee.name}`);
   return `${base} (${parts.join(", ")})`;
 }
 
@@ -775,6 +777,7 @@ export function buildMcpServer(ctx: McpServerContext): McpServer {
         "- `dueAt`: include when the user mentions a date. Use an ISO datetime in UTC.\n" +
         "- `tags`: 2-4 short lowercase kebab-case tokens. Re-use existing tags when possible — search first if unsure.\n" +
         "- `parentId`: include when this task is a follow-up under another task or note.\n" +
+        "- `assignee`: omit it. The task then belongs to the person you work for. Pass a member's name or email only when they ask to give the task to someone else, or 'none' to leave it unassigned.\n" +
         "\n" +
         "Scope — keep tasks small:\n" +
         "- One task = one focused work session (roughly ≤1 hour). If the work spans multiple hours, days, or deliverables, propose a split into smaller executable tasks and get the user's agreement before creating anything.\n" +
@@ -798,6 +801,11 @@ export function buildMcpServer(ctx: McpServerContext): McpServer {
         actorKind: z.enum(ACTOR_KINDS).default("agent"),
         dueAt: z.string().datetime().optional().describe("ISO datetime."),
         priority: z.enum(PRIORITIES).default("none"),
+        assignee: z
+          .string()
+          .max(320)
+          .optional()
+          .describe("'me' (default), 'none', or another member's name or email."),
         completedAt: z
           .string()
           .datetime()
@@ -824,6 +832,7 @@ export function buildMcpServer(ctx: McpServerContext): McpServer {
           dueAt: input.dueAt ?? null,
           priority: input.priority,
           completedAt: input.completedAt ?? null,
+          ...(input.assignee ? { assignee: input.assignee } : {}),
           idempotencyKey: input.idempotencyKey
         });
         return { content: [{ type: "text", text: `created task ${await summarize(entity)}\nid: ${entity.id}` }] };
@@ -924,6 +933,7 @@ export function buildMcpServer(ctx: McpServerContext): McpServer {
         "- move between projects: pass `projectId` (or `null` to move to workspace scope). The entity gets a new KEY-SEQ in the target project; use the new one afterwards.\n" +
         "- re-parent: pass `parentId` (or `null` to detach).\n" +
         "- pin/unpin: `pinned: true/false`. Pinned notes drive opening_brief — use sparingly.\n" +
+        "- assign a task: `assignee` = 'me', 'none', or another member's name or email. Only when asked; the person must be able to see the task's project.\n" +
         "- title=null clears the title (notes only).\n" +
         "- fix completion time: `completedAt` overrides the automatic stamp on a done task (e.g. the user actually finished it yesterday). Combine with `status='done'` in the same call to complete-and-backdate at once.",
       annotations: {
@@ -959,6 +969,11 @@ export function buildMcpServer(ctx: McpServerContext): McpServer {
         dueAt: z.string().datetime().nullable().optional().describe("ISO datetime or null to clear."),
         priority: z.enum(PRIORITIES).optional(),
         pinned: z.boolean().optional().describe("Pin or unpin from project opening brief."),
+        assignee: z
+          .string()
+          .max(320)
+          .optional()
+          .describe("Tasks only: 'me', 'none', or another member's name or email."),
         completedAt: z
           .string()
           .datetime()
@@ -1453,7 +1468,7 @@ export function buildMcpServer(ctx: McpServerContext): McpServer {
     {
       title: "List Tasks",
       description:
-        "Return tasks split into Overdue / Scheduled / Backlog buckets for a given date range. Scheduled includes tasks whose display date falls in [from, to). Overdue is unfinished work before the range start (or before now when from is omitted). Backlog is undated tasks (when includeBacklog is true). Cancelled (status `rejected`) and archived tasks never appear in any bucket — use the project views to inspect cancelled work.",
+        "Return tasks split into Overdue / Scheduled / Backlog buckets for a given date range. By default only the tasks of the person you work for, plus unassigned ones; pass assignee='everyone' to include other members' tasks in shared projects. Scheduled includes tasks whose display date falls in [from, to). Overdue is unfinished work before the range start (or before now when from is omitted). Backlog is undated tasks (when includeBacklog is true). Cancelled (status `rejected`) and archived tasks never appear in any bucket — use the project views to inspect cancelled work.",
       annotations: {
         readOnlyHint: true,
         destructiveHint: false,
@@ -1467,10 +1482,15 @@ export function buildMcpServer(ctx: McpServerContext): McpServer {
         to: z.string().datetime().optional().describe("Range end (ISO datetime, exclusive)."),
         includeBacklog: z.boolean().default(true).describe("Include undated tasks."),
         includeDone: z.boolean().default(false).describe("Include completed tasks."),
-        includeVirtualRecurrences: z.boolean().default(false).describe("Include ephemeral future ghost occurrences for recurring tasks.")
+        includeVirtualRecurrences: z.boolean().default(false).describe("Include ephemeral future ghost occurrences for recurring tasks."),
+        assignee: z
+          .string()
+          .max(320)
+          .default("mine")
+          .describe("'mine' (yours plus unassigned), 'everyone', 'me', 'unassigned', or a member's name or email.")
       }
     },
-    async ({ projectId, projectIds, from, to, includeBacklog, includeDone, includeVirtualRecurrences }) => {
+    async ({ projectId, projectIds, from, to, includeBacklog, includeDone, includeVirtualRecurrences, assignee }) => {
       // Merge projectId into projectIds for the REST call
       const ids: string[] = [];
       if (projectId) ids.push(projectId);
@@ -1482,7 +1502,8 @@ export function buildMcpServer(ctx: McpServerContext): McpServer {
         projectIds: ids.length ? ids : null,
         includeBacklog,
         includeDone,
-        includeVirtualRecurrences
+        includeVirtualRecurrences,
+        ...(assignee === "everyone" ? {} : { assignee })
       });
 
       const lines: string[] = [];
@@ -1592,6 +1613,7 @@ export function buildMcpServer(ctx: McpServerContext): McpServer {
     dueAt: z.string().datetime().nullable().optional().describe("ISO datetime or null to clear."),
     priority: z.enum(PRIORITIES).optional(),
     pinned: z.boolean().optional(),
+    assignee: z.string().max(320).optional(),
     completedAt: z
       .string()
       .datetime()

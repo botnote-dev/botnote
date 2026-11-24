@@ -351,6 +351,77 @@ describe("what a member can see", () => {
   });
 });
 
+describe("assignees", () => {
+  const task = (who: Who, id: string) => ok(call("GET", `/v1/entities/${id}`, who));
+
+  it("gives a new task to whoever creates it", async () => {
+    const mine = await ok(call("POST", "/v1/tasks", ann, { projectId: ids.shared, title: "Water the plants" }));
+    expect(mine.assignee).toMatchObject({ name: "Ann", me: true });
+    expect((await task(ben, mine.id)).assignee).toMatchObject({ name: "Ann", me: false });
+    const his = await ok(call("POST", "/v1/tasks", ben, { projectId: ids.shared, title: "Book the dentist" }));
+    expect(his.assignee).toMatchObject({ name: "Ben", me: true });
+    const note = await ok(call("POST", "/v1/notes", ben, { projectId: ids.shared, body: "no assignee here" }));
+    expect(note.assignee).toBeNull();
+    ids.annTask = mine.id;
+    ids.benTask = his.id;
+  });
+
+  it("assigns by name, email or id, and unassigns", async () => {
+    const byName = await ok(call("PATCH", `/v1/entities/${ids.annTask}`, ann, { assignee: "ben" }));
+    expect(byName.assignee).toMatchObject({ name: "Ben", me: false });
+    const byEmail = await ok(call("PATCH", `/v1/entities/${ids.annTask}`, ben, { assignee: "ANN@example.com" }));
+    expect(byEmail.assignee).toMatchObject({ name: "Ann" });
+    const byId = await ok(call("PATCH", `/v1/entities/${ids.annTask}`, ann, { assignee: benId }));
+    expect(byId.assigneeUserId).toBe(benId);
+    const none = await ok(call("PATCH", `/v1/entities/${ids.annTask}`, ann, { assignee: "none" }));
+    expect(none.assignee).toBeNull();
+    const me = await ok(call("PATCH", `/v1/entities/${ids.annTask}`, ann, { assignee: "me" }));
+    expect(me.assignee).toMatchObject({ name: "Ann", me: true });
+    expect((await call("PATCH", `/v1/entities/${ids.annTask}`, ann, { assignee: "nobody" })).statusCode).toBe(400);
+    const direct = await ok(
+      call("POST", "/v1/tasks", ann, { projectId: ids.shared, title: "For Ben", assignee: "ben@example.com" })
+    );
+    expect(direct.assignee).toMatchObject({ name: "Ben" });
+    ids.forBen = direct.id;
+  });
+
+  it("refuses to assign a task to someone who cannot see it", async () => {
+    expect((await call("PATCH", `/v1/entities/${ids.privTask}`, ann, { assignee: "ben" })).statusCode).toBe(400);
+    expect((await call("PATCH", `/v1/entities/${ids.annLoose}`, ann, { assignee: "ben" })).statusCode).toBe(400);
+    const loose = await call("POST", "/v1/tasks", ann, { title: "loose", assignee: "ben" });
+    expect(loose.statusCode).toBe(400);
+  });
+
+  it("filters to my tasks, and opens a session with them", async () => {
+    const titles = (body: string) => body;
+    const mine = await call("POST", "/v1/tasks/range", ben, { projectIds: [ids.shared], assignee: "mine" });
+    expect(titles(mine.body)).toContain("Book the dentist");
+    expect(titles(mine.body)).toContain("For Ben");
+    expect(titles(mine.body)).not.toContain("Water the plants");
+    const everyone = await call("POST", "/v1/tasks/range", ben, { projectIds: [ids.shared] });
+    expect(titles(everyone.body)).toContain("Water the plants");
+    const hers = await call("POST", "/v1/tasks/range", ben, { projectIds: [ids.shared], assignee: "ann" });
+    expect(titles(hers.body)).toContain("Water the plants");
+    expect(titles(hers.body)).not.toContain("Book the dentist");
+
+    const brief = await ok(call("POST", `/v1/projects/${ids.shared}/opening-brief`, ben, {}));
+    const open = (brief.openTasks as Array<{ title: string }>).map((t) => t.title);
+    expect(open).toContain("Book the dentist");
+    expect(open).not.toContain("Water the plants");
+  });
+
+  it("hands a task back when it moves where its assignee cannot follow", async () => {
+    const moved = await ok(call("PATCH", `/v1/entities/${ids.forBen}`, ann, { projectId: ids.priv }));
+    expect(moved.assignee).toMatchObject({ name: "Ann", me: true });
+
+    await ok(call("PATCH", `/v1/projects/${ids.benProject}`, ben, { visibility: "shared" }));
+    const inBens = await ok(call("POST", "/v1/tasks", ann, { projectId: ids.benProject, title: "Ann helps" }));
+    expect(inBens.assignee).toMatchObject({ name: "Ann" });
+    await ok(call("PATCH", `/v1/projects/${ids.benProject}`, ben, { visibility: "private" }));
+    expect((await task(ben, inBens.id)).assignee).toMatchObject({ name: "Ben", me: true });
+  });
+});
+
 describe("tokens", () => {
   it("act for the person who made them", async () => {
     const created = await ok(call("POST", "/v1/tokens", ben, { name: "Ben laptop" }));
@@ -384,6 +455,7 @@ describe("tokens", () => {
 
     const projects = await ok<Array<{ key: string; visibility: string }>>(call("GET", "/v1/projects", ann));
     expect(projects.find((p) => p.key === "BEN")).toMatchObject({ visibility: "private" });
+    expect((await ok(call("GET", `/v1/entities/${ids.benTask}`, ann))).assignee).toBeNull();
   });
 
   it("lets a removed person rejoin with a new invite", async () => {
