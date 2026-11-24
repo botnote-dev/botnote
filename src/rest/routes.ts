@@ -1,4 +1,4 @@
-import type { FastifyInstance } from "fastify";
+import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import type { ZodTypeProvider } from "fastify-type-provider-zod";
 import { createInterface } from "node:readline";
 import { Readable } from "node:stream";
@@ -64,6 +64,15 @@ import {
   revokeSession,
   verifyMasterPassword
 } from "../service/sessions.js";
+import {
+  PASSWORD_MAX_LENGTH,
+  PASSWORD_MIN_LENGTH,
+  authenticate,
+  changePassword,
+  createOwner,
+  getAccount,
+  hasUsers
+} from "../service/users.js";
 import {
   createRecurrenceRule,
   getRecurrenceForTask,
@@ -1268,9 +1277,92 @@ export async function registerRoutes(
 
   // ----- auth (browser session cookie) -----
 
+  const Password = z.string().min(PASSWORD_MIN_LENGTH).max(PASSWORD_MAX_LENGTH);
+
+  // Password mode sends only `password`; once an account exists, `email` too.
   const LoginBody = z.object({
+    email: z.string().max(320).optional(),
     password: z.string().min(1).max(500)
   });
+
+  const SetupBody = z.object({
+    email: z.string().trim().email().max(320),
+    name: z.string().trim().min(1).max(100),
+    password: Password,
+    setupCode: z.string().max(500).optional()
+  });
+
+  const ChangePasswordBody = z.object({
+    currentPassword: z.string().min(1).max(500),
+    newPassword: Password
+  });
+
+  async function startSession(
+    req: FastifyRequest,
+    reply: FastifyReply,
+    userId: string | null
+  ): Promise<Date> {
+    const ua = (req.headers["user-agent"] as string | undefined) ?? null;
+    const { plaintext, session } = await createSession(req.scope, ctx.db, { userAgent: ua, userId });
+    reply.setCookie("botnote_session", plaintext, {
+      httpOnly: true,
+      secure: sessionCookieSecure(req.protocol),
+      sameSite: "lax",
+      path: "/",
+      maxAge: 60 * 60 * 24 * 30 // 30 days
+    });
+    return session.expiresAt;
+  }
+
+  // A fixed delay on every refusal, so the cheap branches (unknown mode, no
+  // password configured) take as long as the expensive ones.
+  const refusalDelay = () => new Promise((r) => setTimeout(r, 300));
+
+  app.get(
+    "/v1/auth/status",
+    {
+      config: { rateLimit: { max: 60, timeWindow: "1 minute" } },
+      schema: {
+        tags: ["auth"],
+        summary: "What the sign-in page should show: first-run setup or login."
+      }
+    },
+    async () => {
+      ctx.accounts.hasUsers = await hasUsers(ctx.db);
+      return {
+        setupRequired: !ctx.accounts.hasUsers,
+        setupCodeRequired: !ctx.accounts.hasUsers && Boolean(process.env.BOTNOTE_PASSWORD),
+        login: ctx.accounts.hasUsers ? "email" : process.env.BOTNOTE_PASSWORD ? "password" : "none"
+      };
+    }
+  );
+
+  app.post(
+    "/v1/auth/setup",
+    {
+      config: { rateLimit: { max: 10, timeWindow: "1 minute" } },
+      schema: {
+        tags: ["auth"],
+        summary:
+          "Create the first account, which owns the instance. Refused once an account exists. When BOTNOTE_PASSWORD is set it must be sent as setupCode.",
+        body: SetupBody
+      }
+    },
+    async (req, reply) => {
+      const body = SetupBody.parse(req.body);
+      if (process.env.BOTNOTE_PASSWORD && !verifyMasterPassword(body.setupCode ?? "")) {
+        await refusalDelay();
+        return reply.code(403).send({
+          error: "invalid_setup_code",
+          message: "The setup code is the BOTNOTE_PASSWORD this instance was started with."
+        });
+      }
+      const account = await createOwner(req.scope, ctx.db, body);
+      ctx.accounts.hasUsers = true;
+      const expiresAt = await startSession(req, reply, account.id);
+      return { ok: true, expiresAt, user: account };
+    }
+  );
 
   app.post(
     "/v1/auth/login",
@@ -1279,29 +1371,57 @@ export async function registerRoutes(
       config: { rateLimit: { max: 10, timeWindow: "1 minute" } },
       schema: {
         tags: ["auth"],
-        summary: "Master-password login. Sets httpOnly session cookie.",
+        summary:
+          "Sign in with email and password. Before the first account exists, the instance password alone. Sets httpOnly session cookie.",
         body: LoginBody
       }
     },
     async (req, reply) => {
-      const { password } = LoginBody.parse(req.body);
-      const ok = verifyMasterPassword(password);
-      if (!ok) {
-        // Add a small constant-time penalty so timing attacks against the
-        // env-lookup branch aren't easier than the rate limit makes them.
-        await new Promise((r) => setTimeout(r, 300));
+      const { email, password } = LoginBody.parse(req.body);
+      ctx.accounts.hasUsers = await hasUsers(ctx.db);
+      if (ctx.accounts.hasUsers) {
+        const user = email ? await authenticate(ctx.db, email, password) : null;
+        if (!user) {
+          await refusalDelay();
+          return reply.code(401).send({ error: "invalid_credentials" });
+        }
+        const expiresAt = await startSession(req, reply, user.id);
+        return { ok: true, expiresAt };
+      }
+      if (!verifyMasterPassword(password)) {
+        await refusalDelay();
         return reply.code(401).send({ error: "invalid_password" });
       }
-      const ua = (req.headers["user-agent"] as string | undefined) ?? null;
-      const { plaintext, session } = await createSession(req.scope, ctx.db, { userAgent: ua });
-      reply.setCookie("botnote_session", plaintext, {
-        httpOnly: true,
-        secure: sessionCookieSecure(req.protocol),
-        sameSite: "lax",
-        path: "/",
-        maxAge: 60 * 60 * 24 * 30 // 30 days
+      const expiresAt = await startSession(req, reply, null);
+      return { ok: true, expiresAt };
+    }
+  );
+
+  app.post(
+    "/v1/auth/password",
+    {
+      config: { rateLimit: { max: 10, timeWindow: "1 minute" } },
+      schema: {
+        tags: ["auth"],
+        summary: "Change your own password. Signs out your other browsers.",
+        body: ChangePasswordBody
+      }
+    },
+    async (req, reply) => {
+      const body = ChangePasswordBody.parse(req.body);
+      if (!req.userId) {
+        return reply.code(403).send({
+          error: "no_account",
+          message: "Sign in to the web UI with your email to change a password."
+        });
+      }
+      await changePassword(ctx.db, {
+        userId: req.userId,
+        currentPassword: body.currentPassword,
+        newPassword: body.newPassword,
+        keepSessionId: req.sessionId
       });
-      return { ok: true, expiresAt: session.expiresAt };
+      return { ok: true };
     }
   );
 
@@ -1338,10 +1458,11 @@ export async function registerRoutes(
         ? "cookie"
         : hasBearer
           ? "bearer"
-          : ctx.auth.required
+          : ctx.auth.required || ctx.accounts.hasUsers
             ? "trusted_origin"
             : "auth_disabled";
-      return { authenticated: true, via, origin: requestOrigin(req, ctx.auth) };
+      const user = req.userId ? await getAccount(req.scope, ctx.db, req.userId) : null;
+      return { authenticated: true, via, origin: requestOrigin(req, ctx.auth), user };
     }
   );
 

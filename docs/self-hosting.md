@@ -50,7 +50,7 @@ reach it. That, not a credential, is what protects this setup; do not change
    BOTNOTE_VERSION=0.3.0
    BOTNOTE_PUBLIC_URL=https://notes.example.com
    BOTNOTE_DOMAIN=notes.example.com
-   BOTNOTE_PASSWORD=<a long random password>
+   BOTNOTE_PASSWORD=<a long random setup code>
    POSTGRES_PASSWORD=<letters and digits>
    OPENAI_API_KEY=<optional>
    ```
@@ -61,12 +61,33 @@ reach it. That, not a credential, is what protects this setup; do not change
    docker compose --profile caddy up -d
    ```
 
-4. Open `https://notes.example.com`, log in with the password, and create one
-   API token per device under Settings → API tokens.
+4. Open `https://notes.example.com` and create the owner account: your name,
+   email, a password, and the setup code from `.env`. Then create one API token
+   per device under Settings → API tokens.
 
-The daemon refuses to start when `BOTNOTE_PUBLIC_URL` names a public address
-and no password is set. `BOTNOTE_REQUIRE_AUTH=0` overrides that for a private
-network such as a tailnet.
+The first account owns the instance. `BOTNOTE_PASSWORD` is only the setup code
+that proves the instance is yours; leave it out and whoever opens the address
+first becomes the owner, so do the setup right after the first start. Once the
+owner exists the setup page is closed and the code is not used again.
+
+Setting `BOTNOTE_PUBLIC_URL` to a public address turns sign-in on by itself.
+`BOTNOTE_REQUIRE_AUTH=0` overrides that for a private network such as a
+tailnet, until an account is created.
+
+### Accounts and passwords
+
+- Sign in with email and password. Change the password under Settings → Account;
+  that signs out your other browsers.
+- Forgot it? Reset it on the server. The command prints a new password and
+  signs that person out everywhere:
+
+  ```bash
+  docker compose exec botnote node dist/cli.js reset-password you@example.com
+  ```
+
+- An instance upgraded from a release that used a single password keeps
+  accepting that password until the owner account is created. The setup page
+  asks for it once as the setup code.
 
 ### Connecting agents from other devices
 
@@ -168,8 +189,8 @@ export` / `botnote import` in the README.
 | Variable | Default | Meaning |
 |----------|---------|---------|
 | `BOTNOTE_VERSION` | `latest` | Image tag |
-| `BOTNOTE_PUBLIC_URL` | unset | Public address; requires a password |
-| `BOTNOTE_PASSWORD` | unset | Web login; turns auth on |
+| `BOTNOTE_PUBLIC_URL` | unset | Public address; turns sign-in on |
+| `BOTNOTE_PASSWORD` | unset | Setup code asked for when the owner account is created |
 | `BOTNOTE_DOMAIN` | unset | Host name served by the bundled Caddy |
 | `POSTGRES_PASSWORD` | `botnote` | Bundled database password, set before first start |
 | `DATABASE_URL` | bundled database | External Postgres |

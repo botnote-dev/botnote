@@ -43,7 +43,7 @@ export interface CreatedSession {
 export async function createSession(
   scope: Scope,
   db: Database["db"],
-  opts: { userAgent?: string | null; ttlDays?: number } = {}
+  opts: { userAgent?: string | null; ttlDays?: number; userId?: string | null } = {}
 ): Promise<CreatedSession> {
   const ttlDays = opts.ttlDays ?? DEFAULT_TTL_DAYS;
   const plaintext = randomBytes(32).toString("hex");
@@ -54,6 +54,7 @@ export async function createSession(
     .values({
       workspaceId: scope.workspaceId,
       tokenHash,
+      userId: opts.userId ?? null,
       expiresAt,
       userAgent: opts.userAgent ?? null
     })
