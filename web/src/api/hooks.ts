@@ -319,6 +319,19 @@ export function useSplitRecurrence() {
   });
 }
 
+/** The signed-in person; null on an instance without accounts. */
+export function useMe() {
+  return useQuery({
+    queryKey: ["me"],
+    queryFn: async () => (await api.whoami()).user,
+    staleTime: 60_000
+  });
+}
+
+export function useMembers() {
+  return useQuery({ queryKey: ["members"], queryFn: api.listMembers, staleTime: 60_000 });
+}
+
 export function useCreateProject() {
   const qc = useQueryClient();
   return useMutation({

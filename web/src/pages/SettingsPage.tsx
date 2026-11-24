@@ -35,6 +35,7 @@ import {
   TerminalWindowIcon,
   TrashIcon,
   UserIcon,
+  UsersIcon,
   WarningCircleIcon,
   WarningIcon,
   type Icon
@@ -42,7 +43,7 @@ import {
 import { formatDistanceToNow } from "date-fns";
 import { useEffect, useId, useMemo, useState, type FormEvent, type ReactNode } from "react";
 import { useNavigate } from "react-router-dom";
-import { api, type AccountUser } from "../api/client";
+import { api, type AccountUser, type Invite, type Member } from "../api/client";
 import {
   useBackfillEmbeddings,
   useCreateToken,
@@ -62,7 +63,7 @@ const MAX_EMBEDDING_BACKFILL = 100000;
 
 const CARD = "rounded-lg border border-kumo-line bg-kumo-base";
 
-type TabId = "account" | "tokens" | "cli" | "plugin" | "embedding" | "mcp" | "about";
+type TabId = "account" | "members" | "tokens" | "cli" | "plugin" | "embedding" | "mcp" | "about";
 
 interface TabDef {
   id: TabId;
@@ -72,6 +73,7 @@ interface TabDef {
 
 const TABS: TabDef[] = [
   { id: "account", label: "Account", icon: UserIcon },
+  { id: "members", label: "Members", icon: UsersIcon },
   { id: "tokens", label: "API tokens", icon: KeyIcon },
   { id: "cli", label: "CLI", icon: TerminalWindowIcon },
   { id: "plugin", label: "Plugin", icon: PuzzlePieceIcon },
@@ -131,6 +133,7 @@ export function SettingsPage() {
       <main className="min-w-0 flex-1 overflow-y-auto scrollbar-thin">
         <div className="mx-auto max-w-3xl space-y-6 px-4 py-6 md:px-8 md:py-8">
           {tab === "account" && <AccountSection />}
+          {tab === "members" && <MembersSection />}
           {tab === "tokens" && <TokensSection />}
           {tab === "cli" && <CliSection />}
           {tab === "plugin" && <PluginSection />}
@@ -289,8 +292,234 @@ function AccountSection() {
   );
 }
 
+function inviteUrl(token: string): string {
+  return `${window.location.origin}/invite/${token}`;
+}
+
+function MembersSection() {
+  const [me, setMe] = useState<AccountUser | null>(null);
+  const [members, setMembers] = useState<Member[] | null>(null);
+  const [invites, setInvites] = useState<Invite[]>([]);
+  const [fresh, setFresh] = useState<{ id: string; url: string } | null>(null);
+  const [email, setEmail] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const canManage = me?.role === "owner" || me?.role === "admin";
+
+  async function load(manage: boolean) {
+    const [m, i] = await Promise.all([
+      api.listMembers(),
+      manage ? api.listInvites() : Promise.resolve([] as Invite[])
+    ]);
+    setMembers(m);
+    setInvites(i);
+  }
+
+  useEffect(() => {
+    let cancelled = false;
+    api
+      .whoami()
+      .then(async (who) => {
+        if (cancelled) return;
+        setMe(who.user);
+        if (who.user) await load(who.user.role !== "member");
+        else setMembers([]);
+      })
+      .catch((err) => {
+        if (!cancelled) setError(errorText(err));
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  async function run(action: () => Promise<void>) {
+    if (busy) return;
+    setBusy(true);
+    setError(null);
+    try {
+      await action();
+      await load(canManage);
+    } catch (err) {
+      setError(errorText(err));
+    }
+    setBusy(false);
+  }
+
+  function onInvite(e: FormEvent) {
+    e.preventDefault();
+    void run(async () => {
+      const invite = await api.createInvite(email.trim() ? { email: email.trim() } : {});
+      setFresh({ id: invite.id, url: inviteUrl(invite.token) });
+      setEmail("");
+    });
+  }
+
+  function onRemove(member: Member) {
+    if (
+      !confirm(
+        `Remove ${member.name} (${member.email})? Their sign-in and API tokens stop working. What they wrote stays, and their projects pass to the owner.`
+      )
+    ) {
+      return;
+    }
+    void run(() => api.removeMember(member.id));
+  }
+
+  if (members && !me) {
+    return (
+      <>
+        <SectionHeader title="Members" />
+        <Notice tone="info">
+          This instance has no accounts yet. Create the owner account from the sign-in page to
+          invite other people.
+        </Notice>
+      </>
+    );
+  }
+
+  return (
+    <>
+      <SectionHeader
+        title="Members"
+        blurb="People who can sign in here. Everyone sees the projects marked Shared. A private project, and anything kept outside a project, is visible only to the person who owns it, and to no one else, the owner of this instance included."
+      />
+
+      {error && <Notice tone="error">{error}</Notice>}
+
+      <div className={cn(CARD, "overflow-hidden")}>
+        <CardHeader title="People" />
+        {!members && (
+          <div className="flex items-center gap-2 px-4 py-3 text-xs text-kumo-subtle">
+            <Loader size="sm" /> Loading…
+          </div>
+        )}
+        {members?.map((m) => (
+          <div
+            key={m.id}
+            className="flex items-center gap-3 border-b border-kumo-hairline px-4 py-2.5 last:border-b-0"
+          >
+            <div className="min-w-0 flex-1">
+              <div className="truncate text-xs font-medium text-kumo-default">
+                {m.name}
+                {m.id === me?.id && <span className="text-kumo-subtle"> (you)</span>}
+              </div>
+              <div className="truncate text-xxs text-kumo-subtle">{m.email}</div>
+            </div>
+            <Badge variant="secondary" className="text-[11px] capitalize">
+              {m.role}
+            </Badge>
+            {me?.role === "owner" && m.role !== "owner" && (
+              <Button
+                variant="ghost"
+                size="sm"
+                disabled={busy}
+                onClick={() =>
+                  void run(() => api.setMemberRole(m.id, m.role === "admin" ? "member" : "admin").then(() => {}))
+                }
+              >
+                {m.role === "admin" ? "Make member" : "Make admin"}
+              </Button>
+            )}
+            {canManage && m.role !== "owner" && m.id !== me?.id && (me?.role === "owner" || m.role === "member") && (
+              <Button
+                variant="ghost"
+                size="sm"
+                shape="square"
+                icon={<TrashIcon size={13} />}
+                title={`Remove ${m.name}`}
+                aria-label={`Remove ${m.name}`}
+                className="text-kumo-subtle"
+                disabled={busy}
+                onClick={() => onRemove(m)}
+              />
+            )}
+          </div>
+        ))}
+      </div>
+
+      {canManage && (
+        <form onSubmit={onInvite} className={cn(CARD, "overflow-hidden")}>
+          <CardHeader title="Invite someone" />
+          <div className="space-y-3 px-4 py-3">
+            <div className="text-xs leading-relaxed text-kumo-subtle">
+              Create a link and send it yourself, by any channel. It works once and expires in 7
+              days. The person picks their own password.
+            </div>
+            <div className="flex items-end gap-2">
+              <Field label="Their email (optional)" htmlFor="invite-email" className="min-w-0 flex-1">
+                <Input
+                  id="invite-email"
+                  type="email"
+                  className="w-full"
+                  placeholder="Leave empty to let anyone with the link join"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  disabled={busy}
+                />
+              </Field>
+              <Button type="submit" variant="primary" size="sm" icon={<PlusIcon size={13} />} disabled={busy}>
+                Create invite link
+              </Button>
+            </div>
+            {fresh && (
+              <Banner
+                variant="alert"
+                icon={<WarningIcon size={16} weight="fill" />}
+                title="Copy this link now. It is not shown again."
+                description={
+                  <div className="mt-1.5 flex items-center gap-2">
+                    <ClipboardText size="sm" text={fresh.url} className="min-w-0 flex-1" />
+                    <Button size="sm" onClick={() => setFresh(null)}>
+                      Done
+                    </Button>
+                  </div>
+                }
+              />
+            )}
+            {invites.length > 0 && (
+              <div className="space-y-1.5">
+                <div className="text-xxs font-medium tracking-wider text-kumo-subtle uppercase">
+                  Open invites
+                </div>
+                {invites.map((i) => (
+                  <div key={i.id} className="flex items-center gap-2 text-xs text-kumo-default">
+                    <span className="min-w-0 flex-1 truncate">
+                      {i.email ?? "Anyone with the link"}
+                      <span className="text-kumo-subtle">
+                        {" "}
+                        · expires {formatDistanceToNow(new Date(i.expiresAt), { addSuffix: true })}
+                      </span>
+                    </span>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      disabled={busy}
+                      onClick={() =>
+                        void run(async () => {
+                          await api.revokeInvite(i.id);
+                          if (fresh?.id === i.id) setFresh(null);
+                        })
+                      }
+                    >
+                      Revoke
+                    </Button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </form>
+      )}
+    </>
+  );
+}
+
 function PasswordCard() {
   const [user, setUser] = useState<AccountUser | null>(null);
+  const [name, setName] = useState("");
+  const [savingName, setSavingName] = useState(false);
   const [current, setCurrent] = useState("");
   const [next, setNext] = useState("");
   const [busy, setBusy] = useState(false);
@@ -301,7 +530,9 @@ function PasswordCard() {
     api
       .whoami()
       .then((who) => {
-        if (!cancelled) setUser(who.user);
+        if (cancelled) return;
+        setUser(who.user);
+        setName(who.user?.name ?? "");
       })
       .catch(() => {});
     return () => {
@@ -310,6 +541,20 @@ function PasswordCard() {
   }, []);
 
   if (!user) return null;
+
+  async function onSaveName() {
+    if (savingName || !name.trim()) return;
+    setSavingName(true);
+    setResult(null);
+    try {
+      const res = await api.updateProfile({ name: name.trim() });
+      setUser(res.user);
+      setResult({ tone: "success", text: "Name saved." });
+    } catch {
+      setResult({ tone: "error", text: "Could not save the name." });
+    }
+    setSavingName(false);
+  }
 
   async function onSave(e: FormEvent) {
     e.preventDefault();
@@ -337,6 +582,28 @@ function PasswordCard() {
       <div className="space-y-3 px-4 py-3">
         <div className="text-xs text-kumo-default">
           {user.name} <span className="text-kumo-subtle">· {user.email} · {user.role}</span>
+        </div>
+        <div className="flex items-end gap-2">
+          <Field label="Name" htmlFor="profile-name" className="min-w-0 flex-1">
+            <Input
+              id="profile-name"
+              autoComplete="name"
+              className="w-full"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              disabled={savingName}
+            />
+          </Field>
+          <Button
+            type="button"
+            variant="secondary"
+            size="sm"
+            loading={savingName}
+            disabled={savingName || !name.trim() || name.trim() === user.name}
+            onClick={onSaveName}
+          >
+            Save name
+          </Button>
         </div>
         <div className="grid gap-3 sm:grid-cols-2">
           <Field label="Current password" htmlFor="current-password">
@@ -1476,14 +1743,14 @@ function TokensSection() {
     <>
       <SectionHeader
         title="API tokens"
-        blurb="Bearer tokens for the CLI, MCP server, and direct REST calls. New tokens keep their full value available for copying here; older tokens created before this change only have a prefix and must be regenerated if the full value was lost."
+        blurb="Bearer tokens for the CLI, MCP server, and direct REST calls. A token acts as you: an agent using it sees what you see. The full value is shown once, when you create it; if you lose it, revoke the token and create a new one."
       />
 
       {fresh && (
         <Banner
           variant="alert"
           icon={<WarningIcon size={16} weight="fill" />}
-          title="Copy this token now, or later from the token list."
+          title="Copy this token now. It is not shown again."
           description={
             <div className="mt-1.5 flex items-center gap-2">
               <ClipboardText size="sm" text={fresh.plaintext} className="min-w-0 flex-1" />
@@ -1562,10 +1829,10 @@ function TokensSection() {
               ) : (
                 <span
                   className="shrink-0"
-                  title="Full token is unavailable for tokens created before recoverable storage was enabled."
+                  title="The full token is shown only once, when it is created."
                 >
                   <Badge variant="secondary" className="text-[11px]">
-                    Unavailable
+                    Shown once
                   </Badge>
                 </span>
               )}

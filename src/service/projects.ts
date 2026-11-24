@@ -34,7 +34,8 @@ export async function createProject(
     .catch((err: unknown) => {
       // Keys are unique across the instance, including projects this person
       // cannot see, so the message does not say whose project holds it.
-      if ((err as { code?: string }).code === "23505") {
+      const e = err as { code?: string; cause?: { code?: string } };
+      if ((e.code ?? e.cause?.code) === "23505") {
         const conflict = new Error(`project key ${input.key} is already in use`) as Error & {
           statusCode: number;
           code: string;

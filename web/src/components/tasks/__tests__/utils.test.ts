@@ -380,6 +380,8 @@ describe("projectLookup", () => {
       color: "#000",
       icon: "📁",
       agentsMd: "",
+    ownerUserId: null,
+    visibility: "private" as const,
       archivedAt: null,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString()

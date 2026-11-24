@@ -44,10 +44,15 @@ export interface Project {
   color: string;
   icon: string;
   agentsMd: string;
+  /** null on an instance that has no accounts yet. */
+  ownerUserId: string | null;
+  visibility: ProjectVisibility;
   archivedAt: string | null;
   createdAt: string;
   updatedAt: string;
 }
+
+export type ProjectVisibility = "private" | "shared";
 
 export type Priority = "urgent" | "high" | "medium" | "low" | "none";
 export const PRIORITY_LEVELS: Priority[] = ["urgent", "high", "medium", "low", "none"];
@@ -337,6 +342,7 @@ export interface CreateProjectInput {
   color?: string;
   icon?: string;
   agentsMd?: string;
+  visibility?: ProjectVisibility;
 }
 
 export interface UpdateProjectInput {
@@ -345,19 +351,22 @@ export interface UpdateProjectInput {
   color?: string;
   icon?: string;
   agentsMd?: string;
+  visibility?: ProjectVisibility;
 }
 
 export interface Token {
   id: string;
   name: string;
   prefix: string;
+  /** Only tokens created before 0.3 still carry it, and only for their own person. */
   plaintext: string | null;
+  userId: string | null;
   lastUsedAt: string | null;
   createdAt: string;
 }
 
 export interface CreatedToken extends Token {
-  /** Plaintext token. New tokens keep this available in Settings for copying. */
+  /** Returned once, when the token is created. */
   plaintext: string;
 }
 

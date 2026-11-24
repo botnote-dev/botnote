@@ -7,6 +7,7 @@ import { AgentsMdPage } from "./pages/AgentsMdPage";
 import { DashboardPage } from "./pages/DashboardPage";
 import { EntityDetailPage } from "./pages/EntityDetailPage";
 import { InboxPage } from "./pages/InboxPage";
+import { InvitePage } from "./pages/InvitePage";
 import { LoginPage } from "./pages/LoginPage";
 import { OkrPage } from "./pages/OkrPage";
 import { ProjectPage } from "./pages/ProjectPage";
@@ -27,6 +28,7 @@ export default function App() {
             {/* Login lives outside AppShell so the sidebar/topbar don't render
                 while unauthenticated. */}
             <Route path="/login" element={<LoginPage />} />
+            <Route path="/invite/:token" element={<InvitePage />} />
             <Route element={<AppShell />}>
               <Route path="/" element={<TasksPage />} />
               <Route path="/today" element={<TodayPage />} />

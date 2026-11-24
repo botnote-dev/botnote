@@ -328,6 +328,10 @@ describe("what a member can see", () => {
     expect(note.actor).toMatchObject({ kind: "human", label: "Ben", user: "Ben" });
     expect((await call("GET", `/v1/entities/${note.id}`, ann)).statusCode).toBe(200);
 
+    const sameKey = await call("POST", "/v1/projects", ben, { key: "PRIV", name: "Mine" });
+    expect(sameKey.statusCode).toBe(409);
+    expect(sameKey.body).not.toContain(ANN_SECRET);
+
     const hijack = await call("PATCH", `/v1/projects/${ids.shared}`, ben, { visibility: "private" });
     expect(hijack.statusCode).toBe(403);
     const rename = await call("PATCH", `/v1/projects/${ids.shared}`, ben, { name: "Our home" });
