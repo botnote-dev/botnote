@@ -1248,14 +1248,14 @@ describe("botnote service", () => {
     expect(ready.baseUrl).toBe("https://embeddings.example.com/v1");
   });
 
-  it("stores recoverable API token plaintext for Settings copy", async () => {
+  it("stores only the hash of a new API token", async () => {
     const { plaintext } = await createToken(S, db, { name: "laptop" });
     expect(plaintext).toMatch(/^bn_[0-9a-f]{48}$/);
 
     const rows = await listTokens(S, db);
     expect(rows[0]?.name).toBe("laptop");
     expect(rows[0]?.prefix).toBe(plaintext.slice(0, 11));
-    expect(rows[0]?.plaintext).toBe(plaintext);
+    expect(rows[0]?.plaintext).toBeNull();
 
     const consumed = await consumeToken(db, plaintext);
     expect(consumed?.id).toBe(rows[0]?.id);

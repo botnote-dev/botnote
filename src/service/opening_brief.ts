@@ -4,7 +4,7 @@ import { entities, type Entity, type Project } from "../db/schema.js";
 import { blockersFor, type Blocker } from "./blockers.js";
 import { briefOkr, type BriefOkr } from "./okr.js";
 import { getProject } from "./projects.js";
-import type { Scope } from "./scope.js";
+import { entityInScope, type Scope } from "./scope.js";
 import { readSessionSnapshot } from "./session_snapshot.js";
 import { tokenLabels } from "./tokens.js";
 import { DEFAULT_WORKSPACE_TIMEZONE, getWorkspaceSettings } from "./workspace_settings.js";
@@ -52,7 +52,7 @@ export async function openingBrief(
 ): Promise<OpeningBrief> {
   const project = input.projectId ? await getProject(scope, db, input.projectId) : null;
 
-  const inWorkspace = eq(entities.workspaceId, scope.workspaceId);
+  const inWorkspace = entityInScope(scope);
   const projectFilter = and(
     inWorkspace,
     input.projectId ? eq(entities.projectId, input.projectId) : isNull(entities.projectId)

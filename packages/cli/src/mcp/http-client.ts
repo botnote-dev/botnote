@@ -299,6 +299,8 @@ export interface ProjectDTO {
   color: string;
   icon: string;
   agentsMd: string;
+  /** Absent on servers older than 0.3. */
+  visibility?: "private" | "shared";
   archivedAt: string | null;
   createdAt: string;
   updatedAt: string;
@@ -421,6 +423,7 @@ export interface CreateProjectBody {
   color?: string;
   icon?: string;
   agentsMd?: string;
+  visibility?: "private" | "shared";
 }
 
 export interface UpdateProjectBody {
@@ -429,6 +432,7 @@ export interface UpdateProjectBody {
   color?: string;
   icon?: string;
   agentsMd?: string;
+  visibility?: "private" | "shared";
 }
 
 export interface CreateTaskBody {

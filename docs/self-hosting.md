@@ -61,9 +61,9 @@ reach it. That, not a credential, is what protects this setup; do not change
    docker compose --profile caddy up -d
    ```
 
-4. Open `https://notes.example.com` and create the owner account: your name,
-   email, a password, and the setup code from `.env`. Then create one API token
-   per device under Settings → API tokens.
+4. Open `https://notes.example.com` and create the owner account: your email,
+   a password, and the setup code from `.env`. Then create one API token per
+   device under Settings → API tokens. A token is shown once; copy it then.
 
 The first account owns the instance. `BOTNOTE_PASSWORD` is only the setup code
 that proves the instance is yours; leave it out and whoever opens the address
@@ -88,6 +88,24 @@ tailnet, until an account is created.
 - An instance upgraded from a release that used a single password keeps
   accepting that password until the owner account is created. The setup page
   asks for it once as the setup code.
+
+### Adding people
+
+Under Settings → Members, create an invite link and send it yourself; there is
+no email to configure. The link works once and expires in 7 days. The person
+sets their own password and creates their own API tokens.
+
+- Every project is **private** to the person who created it until they set it
+  to **Shared** in the project's settings. A shared project is open to every
+  member, to read and to write.
+- Tasks and notes outside any project belong to whoever wrote them.
+- No role sees another person's private project in the app, the owner
+  included. The owner can still export the whole instance as a backup, and
+  whoever runs the server can read the database.
+- Removing a member stops their sign-in and tokens. What they wrote stays, and
+  their projects pass to the owner.
+- Upgrading an instance that already has an owner changes nothing for that
+  owner: all existing projects are theirs and private.
 
 ### Connecting agents from other devices
 

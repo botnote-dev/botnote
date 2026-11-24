@@ -63,8 +63,7 @@ export function LoginPage() {
   const setup = mode === "setup";
   const ready =
     mode === "setup"
-      ? name.trim() !== "" &&
-        email.trim() !== "" &&
+      ? email.trim() !== "" &&
         password.length >= PASSWORD_MIN_LENGTH &&
         (!status?.setupCodeRequired || setupCode !== "")
       : mode === "email"
@@ -81,7 +80,7 @@ export function LoginPage() {
     try {
       if (mode === "setup") {
         await api.setup({
-          name: name.trim(),
+          ...(name.trim() ? { name: name.trim() } : {}),
           email: email.trim(),
           password,
           setupCode: status?.setupCodeRequired ? setupCode : undefined
@@ -137,15 +136,6 @@ export function LoginPage() {
               This instance has no account yet. The first account owns it and can invite others
               later.
             </p>
-            <Input
-              label="Name"
-              autoFocus
-              autoComplete="name"
-              className="w-full"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              disabled={busy}
-            />
           </>
         )}
 
@@ -153,7 +143,7 @@ export function LoginPage() {
           <Input
             label="Email"
             type="email"
-            autoFocus={mode === "email"}
+            autoFocus={setup || mode === "email"}
             autoComplete={setup ? "email" : "username"}
             className="w-full"
             value={email}
@@ -172,6 +162,18 @@ export function LoginPage() {
             className="w-full"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
+            disabled={busy}
+          />
+        )}
+
+        {setup && (
+          <Input
+            label="Name (optional)"
+            autoComplete="name"
+            description="How others see you. Defaults to the part of your email before @."
+            className="w-full"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
             disabled={busy}
           />
         )}

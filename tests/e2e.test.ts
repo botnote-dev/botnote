@@ -342,7 +342,7 @@ describe("botnote E2E cross-transport", () => {
 
     const listResp = await fetch(`${baseUrl}/v1/tokens`);
     const tokens = (await listResp.json()) as Array<{ id: string; plaintext: string | null }>;
-    expect(tokens.find((t) => t.id === created.id)?.plaintext).toBe(created.plaintext);
+    expect(tokens.find((t) => t.id === created.id)?.plaintext).toBeNull();
 
     const deleteResp = await fetch(`${baseUrl}/v1/tokens/${created.id}`, { method: "DELETE" });
     expect(deleteResp.status).toBe(204);

@@ -1,8 +1,8 @@
 import { Button } from "@cloudflare/kumo/components/button";
 import { Input } from "@cloudflare/kumo/components/input";
 import { useEffect, useState } from "react";
-import { useProject, useUpdateProject } from "../../api/hooks";
-import { PROJECT_STATUSES, type ProjectStatus } from "../../api/types";
+import { useMe, useProject, useUpdateProject } from "../../api/hooks";
+import { PROJECT_STATUSES, type ProjectStatus, type ProjectVisibility } from "../../api/types";
 import { DEFAULT_PROJECT_COLOR, DEFAULT_PROJECT_ICON } from "../../lib/projectTheme";
 import { PROJECT_STATUS_HELP, PROJECT_STATUS_LABEL } from "../../lib/projectStatus";
 import { useModals } from "../../state/modals";
@@ -14,8 +14,10 @@ export function EditProjectModal({ projectId }: { projectId: string }) {
   const { data: project } = useProject(projectId);
   const update = useUpdateProject();
   const { close } = useModals();
+  const { data: me } = useMe();
 
   const [name, setName] = useState("");
+  const [visibility, setVisibility] = useState<ProjectVisibility>("private");
   const [status, setStatus] = useState<ProjectStatus>("active");
   const [color, setColor] = useState(DEFAULT_PROJECT_COLOR);
   const [icon, setIcon] = useState(DEFAULT_PROJECT_ICON);
@@ -26,8 +28,16 @@ export function EditProjectModal({ projectId }: { projectId: string }) {
       setStatus(project.status);
       setColor(project.color);
       setIcon(project.icon);
+      setVisibility(project.visibility);
     }
-  }, [project?.id, project?.name, project?.status, project?.color, project?.icon]);
+  }, [
+    project?.id,
+    project?.name,
+    project?.status,
+    project?.color,
+    project?.icon,
+    project?.visibility
+  ]);
 
   if (!project) {
     return (
@@ -42,7 +52,10 @@ export function EditProjectModal({ projectId }: { projectId: string }) {
     name !== loadedProject.name ||
     status !== loadedProject.status ||
     color !== loadedProject.color ||
-    icon !== loadedProject.icon;
+    icon !== loadedProject.icon ||
+    visibility !== loadedProject.visibility;
+  // Without accounts there is nobody to share with, and only the owner decides.
+  const canShare = Boolean(me) && loadedProject.ownerUserId === me?.id;
   const valid = name.trim().length > 0;
 
   return (
@@ -53,7 +66,13 @@ export function EditProjectModal({ projectId }: { projectId: string }) {
           if (!dirty || !valid) return;
           await update.mutateAsync({
             id: loadedProject.id,
-            fields: { name: name.trim(), status, color, icon }
+            fields: {
+              name: name.trim(),
+              status,
+              color,
+              icon,
+              ...(visibility !== loadedProject.visibility ? { visibility } : {})
+            }
           });
           close();
         }}
@@ -84,6 +103,25 @@ export function EditProjectModal({ projectId }: { projectId: string }) {
             </option>
           ))}
         </NativeSelect>
+        {me && (
+          <div className="space-y-1">
+            <NativeSelect
+              label="Who can see it"
+              className="w-full"
+              value={visibility}
+              onChange={(e) => setVisibility(e.target.value as ProjectVisibility)}
+              disabled={!canShare}
+            >
+              <option value="private">Private · only the owner and their agents</option>
+              <option value="shared">Shared · everyone on this botnote</option>
+            </NativeSelect>
+            {!canShare && (
+              <div className="text-xxs text-kumo-subtle">
+                Only the person who owns this project can change who sees it.
+              </div>
+            )}
+          </div>
+        )}
         <div className="flex justify-end gap-2 pt-1">
           <Button type="button" onClick={close}>
             Cancel

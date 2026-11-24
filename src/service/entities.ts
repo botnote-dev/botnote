@@ -11,7 +11,7 @@ import {
   type ContentFieldKey
 } from "./recurrence.js";
 import { recordRevision, type RevisionSnapshot } from "./revisions.js";
-import type { Scope } from "./scope.js";
+import { entityInScope, entityVisible, projectVisible, type Scope } from "./scope.js";
 import type {
   CreateWorklogEntryInput,
   GetLinksInput,
@@ -43,7 +43,7 @@ function normalizeStatus(value: string): string {
 }
 
 function inScope(scope: Scope) {
-  return eq(entities.workspaceId, scope.workspaceId);
+  return entityInScope(scope);
 }
 
 function activeProjectVisibility(scope: Scope) {
@@ -71,6 +71,7 @@ export async function resolveEntityId(
       SELECT id::text AS id
       FROM entities
       WHERE workspace_id = ${scope.workspaceId}::uuid
+        AND ${entityVisible(scope)}
         AND id::text LIKE ${`${idOrPrefix.toLowerCase()}%`}
       LIMIT 2
     `)
@@ -98,7 +99,13 @@ async function assertProjectInScope(
   const [project] = await db
     .select({ id: projects.id })
     .from(projects)
-    .where(and(eq(projects.id, projectId), eq(projects.workspaceId, scope.workspaceId)))
+    .where(
+      and(
+        eq(projects.id, projectId),
+        eq(projects.workspaceId, scope.workspaceId),
+        projectVisible(scope)
+      )
+    )
     .limit(1);
   if (!project) throw clientError(`project ${projectId} not found`, 404);
 }
@@ -165,6 +172,7 @@ export async function write(scope: Scope, db: Database["db"], input: WriteInput)
       parentId: input.parentId ?? null,
       actorKind: input.actorKind,
       actorTokenId: input.actorTokenId ?? null,
+      authorUserId: scope.userId ?? null,
       metadata: input.metadata,
       dueAt: normalizeDueAt(input.dueAt),
       priority: input.priority,
@@ -338,6 +346,9 @@ export async function update(
         );
       }
       if (fields.projectId !== null) await assertProjectInScope(scope, db, fields.projectId);
+      // Outside a project an entity belongs to one person; whoever takes it
+      // out of the project keeps it.
+      else if (scope.userId) set.authorUserId = scope.userId;
       movesProject = true;
     }
     // Only touch completedAt when the status itself is changing — an unrelated
@@ -423,10 +434,17 @@ export async function update(
         .update(entities)
         .set({
           projectId: updated[0].projectId,
+          ...(updated[0].projectId === null && scope.userId
+            ? { authorUserId: scope.userId }
+            : {}),
           updatedAt: sql`${entities.updatedAt} + interval '1 microsecond'`
         })
         .where(
-          and(eq(entities.parentId, entityId), eq(entities.kind, "worklog"), inScope(scope))
+          and(
+            eq(entities.parentId, entityId),
+            eq(entities.kind, "worklog"),
+            eq(entities.workspaceId, scope.workspaceId)
+          )
         );
     }
     return updated;
@@ -553,6 +571,7 @@ export async function getByKey(
     .where(
       and(
         eq(projects.workspaceId, scope.workspaceId),
+        projectVisible(scope),
         eq(projects.key, projectKey),
         eq(entities.sequenceId, sequenceId)
       )
@@ -766,6 +785,7 @@ export async function listTags(
     FROM entities, unnest(tags) AS tag
     WHERE deleted_at IS NULL
       AND workspace_id = ${scope.workspaceId}::uuid ${projectFilter}
+      AND ${entityVisible(scope)}
     GROUP BY tag
     ORDER BY count DESC, tag ASC
   `);

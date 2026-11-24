@@ -1,6 +1,6 @@
 import { sql } from "drizzle-orm";
 import type { Database } from "../db/client.js";
-import type { Scope } from "./scope.js";
+import { entityInScope, type Scope } from "./scope.js";
 
 /** A compact pointer to another entity, as a list row or a resuming agent should see it. */
 export interface EntityRef {
@@ -64,7 +64,7 @@ export async function blockersFor(
     LEFT JOIN projects p ON p.id = b.project_id
     WHERE e.kind = 'blocks'
       AND e.to_id IN (${idList})
-      AND b.workspace_id = ${scope.workspaceId}::uuid
+      AND ${entityInScope(scope, sql`b`)}
       AND b.deleted_at IS NULL
       AND (b.status IS NULL OR b.status NOT IN ('done', 'rejected', 'archived'))
     ORDER BY e.created_at ASC

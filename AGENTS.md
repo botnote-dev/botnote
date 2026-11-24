@@ -59,6 +59,18 @@ duplicated on purpose and pinned equal by a test.
 - `body_vec` is populated async via the embedding worker. NULL is a valid
   intermediate state.
 
+## Visibility rules
+
+- A project is private to its owner or shared with every member. Content
+  outside a project belongs to its author. See `docs/multi-user-design.md`.
+- Every query on `entities` or `projects` in `src/service/` MUST apply
+  `entityInScope` / `entityVisible` / `projectVisible` from
+  `src/service/scope.ts` next to the workspace filter. Never filter by
+  `workspace_id` alone.
+- A new read route MUST be added to the sweep in `tests/members.test.ts`.
+- NEVER build a request `Scope` without `userId` once accounts exist. Only
+  background jobs run unrestricted.
+
 ## Search rules
 
 - Hybrid retrieval default: RRF over BM25 + cosine + time decay.

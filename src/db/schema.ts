@@ -82,6 +82,9 @@ const workspaceRef = () =>
 export const PROJECT_STATUSES = ["planned", "active", "watching", "paused", "archived"] as const;
 export type ProjectStatus = (typeof PROJECT_STATUSES)[number];
 
+export const PROJECT_VISIBILITIES = ["private", "shared"] as const;
+export type ProjectVisibility = (typeof PROJECT_VISIBILITIES)[number];
+
 export const projects = pgTable(
   "projects",
   {
@@ -93,6 +96,10 @@ export const projects = pgTable(
     color: text("color").notNull().default("#5e6ad2"),
     icon: text("icon").notNull().default("circle"),
     agentsMd: text("agents_md").notNull().default(""),
+    // null only while the instance has no accounts.
+    ownerUserId: uuid("owner_user_id").references(() => users.id, { onDelete: "set null" }),
+    // private: the owner and the owner's agents. shared: every member.
+    visibility: text("visibility").$type<ProjectVisibility>().notNull().default("private"),
     archivedAt: timestamp("archived_at", { withTimezone: true }),
     // Per-project sequence counter, advanced by the entities insert trigger
     // (migration 0026). Never written from application code.
@@ -123,6 +130,9 @@ export const entities = pgTable(
     // API token that performed the write, when the request carried one.
     // Resolves to a human-readable author label ("Claude Code @ MacBook").
     actorTokenId: uuid("actor_token_id").references(() => tokens.id, { onDelete: "set null" }),
+    // The person who wrote it, or whose agent did. Content outside a project
+    // is visible to this person only.
+    authorUserId: uuid("author_user_id").references(() => users.id, { onDelete: "set null" }),
     idempotencyKey: text("idempotency_key"),
     parentId: uuid("parent_id"),
     bodyTsv: tsvector("body_tsv"),
@@ -292,6 +302,27 @@ export const workspaceMembers = pgTable(
   })
 );
 
+export const workspaceInvites = pgTable(
+  "workspace_invites",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    workspaceId: uuid("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "cascade" }),
+    tokenHash: text("token_hash").notNull(),
+    role: text("role").$type<MemberRole>().notNull().default("member"),
+    email: text("email"),
+    createdBy: uuid("created_by").references(() => users.id, { onDelete: "set null" }),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    acceptedAt: timestamp("accepted_at", { withTimezone: true }),
+    acceptedBy: uuid("accepted_by").references(() => users.id, { onDelete: "set null" }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow()
+  },
+  (t) => ({
+    tokenHashIdx: uniqueIndex("workspace_invites_token_hash_idx").on(t.tokenHash)
+  })
+);
+
 export const tokens = pgTable(
   "tokens",
   {
@@ -399,3 +430,4 @@ export type WorkspaceSettings = typeof workspaceSettings.$inferSelect;
 export type Session = typeof sessions.$inferSelect;
 export type User = typeof users.$inferSelect;
 export type WorkspaceMember = typeof workspaceMembers.$inferSelect;
+export type WorkspaceInvite = typeof workspaceInvites.$inferSelect;

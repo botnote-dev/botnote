@@ -3,7 +3,7 @@ import { Input, InputArea } from "@cloudflare/kumo/components/input";
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useCreateProject } from "../../api/hooks";
-import { PROJECT_STATUSES, type ProjectStatus } from "../../api/types";
+import { PROJECT_STATUSES, type ProjectStatus, type ProjectVisibility } from "../../api/types";
 import { DEFAULT_PROJECT_COLOR, DEFAULT_PROJECT_ICON } from "../../lib/projectTheme";
 import { PROJECT_STATUS_HELP, PROJECT_STATUS_LABEL } from "../../lib/projectStatus";
 import { useModals } from "../../state/modals";
@@ -15,6 +15,7 @@ export function NewProjectModal() {
   const [key, setKey] = useState("");
   const [name, setName] = useState("");
   const [status, setStatus] = useState<ProjectStatus>("active");
+  const [visibility, setVisibility] = useState<ProjectVisibility>("private");
   const [agentsMd, setAgentsMd] = useState("");
   const [color, setColor] = useState(DEFAULT_PROJECT_COLOR);
   const [icon, setIcon] = useState(DEFAULT_PROJECT_ICON);
@@ -36,6 +37,7 @@ export function NewProjectModal() {
             status,
             color,
             icon,
+            visibility,
             agentsMd: agentsMd.trim()
           });
           close();
@@ -76,6 +78,15 @@ export function NewProjectModal() {
               {PROJECT_STATUS_LABEL[s]} · {PROJECT_STATUS_HELP[s]}
             </option>
           ))}
+        </NativeSelect>
+        <NativeSelect
+          label="Who can see it"
+          className="w-full"
+          value={visibility}
+          onChange={(e) => setVisibility(e.target.value as ProjectVisibility)}
+        >
+          <option value="private">Private · only you and your agents</option>
+          <option value="shared">Shared · everyone on this botnote</option>
         </NativeSelect>
         <InputArea
           label="AGENTS.md (optional)"

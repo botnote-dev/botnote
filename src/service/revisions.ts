@@ -2,7 +2,7 @@ import { and, desc, eq, sql } from "drizzle-orm";
 import type { Database } from "../db/client.js";
 import { entities, entityRevisions, type EntityRevision } from "../db/schema.js";
 import { resolveEntityId } from "./entities.js";
-import type { Scope } from "./scope.js";
+import { entityInScope, type Scope } from "./scope.js";
 
 type Db = Database["db"];
 type Tx = Parameters<Parameters<Db["transaction"]>[0]>[0];
@@ -64,7 +64,7 @@ export async function listRevisions(
   const exists = await db
     .select({ id: entities.id })
     .from(entities)
-    .where(and(eq(entities.id, entityId), eq(entities.workspaceId, scope.workspaceId)))
+    .where(and(eq(entities.id, entityId), entityInScope(scope)))
     .limit(1);
   if (exists.length === 0) return null;
   return db

@@ -1,7 +1,7 @@
 import { and, eq, inArray, sql } from "drizzle-orm";
 import type { Database } from "../db/client.js";
 import { edges, entities as entitiesTable, type Entity } from "../db/schema.js";
-import type { Scope } from "./scope.js";
+import { entityVisible, type Scope } from "./scope.js";
 import type { SearchInput } from "./types.js";
 
 export interface SearchHit {
@@ -158,7 +158,7 @@ export async function search(
   input: SearchInput,
   opts: { queryEmbedding?: number[]; now?: Date; matchKeys?: boolean } = {}
 ): Promise<SearchHit[]> {
-  const wsFilter = sql`AND workspace_id = ${scope.workspaceId}::uuid`;
+  const wsFilter = sql`AND entities.workspace_id = ${scope.workspaceId}::uuid AND ${entityVisible(scope)}`;
   const projectFilter = input.projectId
     ? sql`AND project_id = ${input.projectId}::uuid`
     : sql``;

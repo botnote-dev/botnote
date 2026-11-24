@@ -1,10 +1,17 @@
 import { Badge } from "@cloudflare/kumo/components/badge";
 import { Button, LinkButton } from "@cloudflare/kumo/components/button";
 import { Tabs } from "@cloudflare/kumo/components/tabs";
-import { BrainIcon, KanbanIcon, RobotIcon, SlidersHorizontalIcon } from "@phosphor-icons/react";
+import {
+  BrainIcon,
+  KanbanIcon,
+  LockIcon,
+  RobotIcon,
+  SlidersHorizontalIcon,
+  UsersIcon
+} from "@phosphor-icons/react";
 import { useMemo } from "react";
 import { useParams, useSearchParams } from "react-router-dom";
-import { useProjectByKey, useProjectTasks } from "../api/hooks";
+import { useMe, useProjectByKey, useProjectTasks } from "../api/hooks";
 import { KanbanBoard } from "../components/project/KanbanBoard";
 import { NotesList } from "../components/project/NotesList";
 import { ProjectIcon } from "../components/ProjectIcon";
@@ -18,9 +25,10 @@ export function ProjectPage() {
   const [search, setSearch] = useSearchParams();
   const tab = (search.get("tab") as Tab) || "tasks";
 
-  const { data: project } = useProjectByKey(key);
+  const { data: project, isError } = useProjectByKey(key);
   const { data: tasks } = useProjectTasks(project?.id);
   const { open: openModal } = useModals();
+  const { data: me } = useMe();
 
   const counts = useMemo(() => {
     const t = tasks ?? [];
@@ -33,7 +41,13 @@ export function ProjectPage() {
   }, [tasks]);
 
   if (!project) {
-    return <div className="p-6 text-sm text-kumo-subtle">Loading project…</div>;
+    return (
+      <div className="p-6 text-sm text-kumo-subtle">
+        {isError
+          ? "This project does not exist, or it is private to someone else."
+          : "Loading project…"}
+      </div>
+    );
   }
 
   const setTab = (t: Tab) => {
@@ -57,6 +71,12 @@ export function ProjectPage() {
           <Badge variant="secondary" className="hidden sm:inline-flex">
             {PROJECT_STATUS_LABEL[project.status]}
           </Badge>
+          {me && (
+            <Badge variant="secondary" className="hidden sm:inline-flex items-center gap-1">
+              {project.visibility === "shared" ? <UsersIcon size={11} /> : <LockIcon size={11} />}
+              {project.visibility === "shared" ? "Shared" : "Private"}
+            </Badge>
+          )}
           <Button
             variant="ghost"
             size="sm"

@@ -54,6 +54,25 @@ export interface AccountUser {
   role: "owner" | "admin" | "member";
 }
 
+export interface Member extends AccountUser {
+  joinedAt: string;
+}
+
+export interface Invite {
+  id: string;
+  role: "admin" | "member";
+  email: string | null;
+  expiresAt: string;
+  createdAt: string;
+}
+
+export interface InviteInfo {
+  email: string | null;
+  role: "admin" | "member";
+  invitedBy: string | null;
+  expiresAt: string;
+}
+
 /** Paths the global 401 interceptor must NOT redirect from, because they're
  *  part of the login surface itself or expected to return 401 as a status,
  *  not as a "you should log in" signal. */
@@ -64,6 +83,8 @@ const NO_REDIRECT_PATHS = new Set<string>([
   "/v1/auth/status",
   "/v1/auth/setup",
   "/v1/auth/password",
+  "/v1/auth/invite/lookup",
+  "/v1/auth/invite/accept",
   "/health"
 ]);
 
@@ -281,7 +302,7 @@ export const api = {
       method: "POST",
       body: JSON.stringify(input)
     }),
-  setup: (input: { email: string; name: string; password: string; setupCode?: string }) =>
+  setup: (input: { email: string; name?: string; password: string; setupCode?: string }) =>
     request<{ ok: boolean; expiresAt: string; user: AccountUser }>("/v1/auth/setup", {
       method: "POST",
       body: JSON.stringify(input)
@@ -291,8 +312,39 @@ export const api = {
       method: "POST",
       body: JSON.stringify(input)
     }),
+  updateProfile: (input: { name: string }) =>
+    request<{ ok: boolean; user: AccountUser }>("/v1/auth/profile", {
+      method: "PATCH",
+      body: JSON.stringify(input)
+    }),
+  lookupInvite: (token: string) =>
+    request<InviteInfo>("/v1/auth/invite/lookup", {
+      method: "POST",
+      body: JSON.stringify({ token })
+    }),
+  acceptInvite: (input: { token: string; email: string; name?: string; password: string }) =>
+    request<{ ok: boolean; expiresAt: string; user: AccountUser }>("/v1/auth/invite/accept", {
+      method: "POST",
+      body: JSON.stringify(input)
+    }),
   logout: () =>
     request<{ ok: boolean }>("/v1/auth/logout", { method: "POST" }),
+
+  // ----- members -----
+  listMembers: () => request<Member[]>("/v1/members"),
+  setMemberRole: (userId: string, role: "admin" | "member") =>
+    request<{ ok: boolean }>(`/v1/members/${userId}`, {
+      method: "PATCH",
+      body: JSON.stringify({ role })
+    }),
+  removeMember: (userId: string) => request<void>(`/v1/members/${userId}`, { method: "DELETE" }),
+  listInvites: () => request<Invite[]>("/v1/invites"),
+  createInvite: (input: { role?: "admin" | "member"; email?: string }) =>
+    request<Invite & { token: string }>("/v1/invites", {
+      method: "POST",
+      body: JSON.stringify(input)
+    }),
+  revokeInvite: (id: string) => request<void>(`/v1/invites/${id}`, { method: "DELETE" }),
   whoami: () =>
     request<{
       authenticated: boolean;

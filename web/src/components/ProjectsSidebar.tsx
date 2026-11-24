@@ -12,6 +12,7 @@ import {
   TrashIcon,
   TargetIcon,
   TrayIcon,
+  UsersIcon,
   type Icon
 } from "@phosphor-icons/react";
 import { useEffect, useMemo, type ReactNode } from "react";
@@ -277,6 +278,9 @@ function ProjectItem({ project, active }: { project: Project; active: boolean })
           {project.key}
         </span>
         <span className="truncate text-kumo-subtle">{project.name}</span>
+        {project.visibility === "shared" && (
+          <UsersIcon size={11} className="ml-auto shrink-0 text-kumo-placeholder" aria-label="Shared" />
+        )}
       </Sidebar.MenuButton>
     </Sidebar.MenuItem>
   );

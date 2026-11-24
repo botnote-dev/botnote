@@ -143,6 +143,8 @@ describe("GhostChip", () => {
       color: "#ff6600",
       icon: "circle",
       agentsMd: "",
+    ownerUserId: null,
+    visibility: "private" as const,
       archivedAt: null,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString()

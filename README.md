@@ -78,9 +78,9 @@ botnote login
 daemon on the same machine, which needs no token. From another machine enter
 your instance's URL (for example `https://botnote.example.com`) plus a token
 from Settings -> API tokens. Every client surface (CLI, MCP server, plugins)
-shares that one default; nothing ever falls back to a third-party host. New API tokens remain copyable from Settings; tokens
-created before recoverable storage was added only show their prefix and should
-be regenerated if the full value was lost.
+shares that one default; nothing ever falls back to a third-party host. A token
+is shown once, when you create it, and acts as the person who created it. If
+you lose it, revoke it and create a new one.
 
 Security note: newly-created API tokens are stored recoverably in the database
 so Settings can copy them later. Treat the database and backups as
