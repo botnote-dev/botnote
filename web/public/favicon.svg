@@ -1,13 +1,9 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-labelledby="title desc">
   <title id="title">botnote logo</title>
-  <desc id="desc">A compact note page with a simple bot face on an indigo background.</desc>
-  <rect width="64" height="64" rx="14" fill="#5e6ad2" />
-  <path
-    d="M19 12h24l9 9v24c0 4.42-3.58 8-8 8H19c-4.42 0-8-3.58-8-8V20c0-4.42 3.58-8 8-8Z"
-    fill="#fff"
-  />
-  <path d="M43 13v8h8" fill="none" stroke="#dfe2ff" stroke-linecap="round" stroke-linejoin="round" stroke-width="5" />
-  <circle cx="25" cy="34" r="3.5" fill="#5e6ad2" />
-  <circle cx="39" cy="34" r="3.5" fill="#5e6ad2" />
-  <path d="M25 43h14" fill="none" stroke="#5e6ad2" stroke-linecap="round" stroke-width="4.5" />
+  <desc id="desc">Two stacked notes on a teal background; the front note has two eyes.</desc>
+  <rect width="64" height="64" rx="14" fill="#0a7e83" />
+  <rect x="16" y="10" width="38" height="38" rx="9" fill="#7fc4c7" />
+  <rect x="10" y="16" width="38" height="38" rx="9" fill="#fff" />
+  <rect x="21" y="29.5" width="5" height="11" rx="2.5" fill="#0a7e83" />
+  <rect x="32" y="29.5" width="5" height="11" rx="2.5" fill="#0a7e83" />
 </svg>
