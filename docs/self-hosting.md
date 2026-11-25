@@ -102,6 +102,10 @@ sets their own password and creates their own API tokens.
 - A task belongs to whoever created it, shown as their initials on the board.
   Click the avatar to give it to someone else or leave it unassigned. An
   agent starts each session with its own person's tasks.
+- What an agent writes is signed with its person's name, not the name of the
+  API token it used.
+- Settings → Account → Content language sets the language agents write tasks
+  and notes in, for everyone. It applies to new content only.
 - No role sees another person's private project in the app, the owner
   included. The owner can still export the whole instance as a backup, and
   whoever runs the server can read the database.

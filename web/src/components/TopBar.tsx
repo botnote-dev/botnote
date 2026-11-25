@@ -85,7 +85,6 @@ export function TopBar() {
           onClick={() => open({ kind: "quick-create" })}
         >
           <span className="sr-only sm:not-sr-only">New</span>
-          <kbd className="hidden border-white/25 bg-white/15 text-white md:inline-flex">c</kbd>
         </Button>
         <ColorModeMenu />
         <Button

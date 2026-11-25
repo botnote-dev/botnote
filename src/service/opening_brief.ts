@@ -7,7 +7,12 @@ import { getProject } from "./projects.js";
 import { entityInScope, type Scope } from "./scope.js";
 import { readSessionSnapshot } from "./session_snapshot.js";
 import { tokenLabels } from "./tokens.js";
-import { DEFAULT_WORKSPACE_TIMEZONE, getWorkspaceSettings } from "./workspace_settings.js";
+import { userNames } from "./members.js";
+import {
+  contentLanguageRule,
+  DEFAULT_WORKSPACE_TIMEZONE,
+  getWorkspaceSettings
+} from "./workspace_settings.js";
 import type { OpeningBriefInput } from "./types.js";
 
 export interface OpeningBrief {
@@ -24,11 +29,13 @@ export interface OpeningBrief {
   /** Quarter objectives and current KRs (project brief) or the tier list and
    *  this week's Top 5 (workspace brief). Null when no OKR is recorded. */
   okr: BriefOkr | null;
-  /** Token id -> token name for the authors of latestWorklog, so the
-   *  worklog line can say who wrote it. */
+  /** Worklog entry id -> who wrote it: the person's name, or the token's name
+   *  on an instance without accounts. Absent when neither is known. */
   actorLabels: Record<string, string>;
   generatedAt: Date;
   timezone: string;
+  /** Language code agents write content in, or null when the instance has none. */
+  contentLanguage: string | null;
 }
 
 function formatSnapshot(snap: NonNullable<ReturnType<typeof readSessionSnapshot>>): string {
@@ -59,7 +66,10 @@ export async function openingBrief(
   )!;
 
   const [settings, pinnedNotes, openTasks, recentRows] = await Promise.all([
-    getWorkspaceSettings(scope, db).catch(() => ({ timezone: DEFAULT_WORKSPACE_TIMEZONE })),
+    getWorkspaceSettings(scope, db).catch(() => ({
+      timezone: DEFAULT_WORKSPACE_TIMEZONE,
+      contentLanguage: null
+    })),
     db
       .select()
       .from(entities)
@@ -137,13 +147,17 @@ export async function openingBrief(
   const okr = await briefOkr(scope, db, input.projectId ?? null);
 
   const actorLabels: Record<string, string> = {};
-  const authorTokenIds = latestWorklog.map((w) => w.actorTokenId).filter((id): id is string => !!id);
-  if (authorTokenIds.length > 0) {
-    const labels = await tokenLabels(scope, db);
-    for (const id of authorTokenIds) {
-      const name = labels.get(id);
-      if (name) actorLabels[id] = name;
-    }
+  const people = await userNames(
+    db,
+    latestWorklog.map((w) => w.authorUserId).filter((id): id is string => !!id)
+  );
+  const unnamed = latestWorklog.filter((w) => !(w.authorUserId && people.has(w.authorUserId)));
+  const tokens = unnamed.some((w) => w.actorTokenId) ? await tokenLabels(scope, db) : new Map();
+  for (const w of latestWorklog) {
+    const person = w.authorUserId ? people.get(w.authorUserId) : undefined;
+    const token = w.actorTokenId ? tokens.get(w.actorTokenId) : undefined;
+    if (person) actorLabels[w.id] = w.actorKind === "agent" ? `${person} (agent)` : person;
+    else if (token) actorLabels[w.id] = token;
   }
 
   return {
@@ -157,7 +171,8 @@ export async function openingBrief(
     okr,
     actorLabels,
     generatedAt: new Date(),
-    timezone: settings.timezone
+    timezone: settings.timezone,
+    contentLanguage: settings.contentLanguage
   };
 }
 
@@ -237,6 +252,11 @@ export function formatOpeningBrief(brief: OpeningBrief): string {
   // One-line temporal context so agents can resolve relative dates immediately.
   lines.push(`_Server time: ${brief.generatedAt.toISOString()} · timezone: ${brief.timezone}_`);
   lines.push("");
+  const languageRule = contentLanguageRule(brief.contentLanguage);
+  if (languageRule) {
+    lines.push(`**Content language.** ${languageRule}`);
+    lines.push("");
+  }
 
   if (brief.agentsMd) {
     lines.push("## AGENTS.md");
@@ -311,7 +331,7 @@ export function formatOpeningBrief(brief: OpeningBrief): string {
       const log = worklogByTask.get(t.id);
       if (log) {
         const when = log.createdAt.toISOString().slice(0, 16).replace("T", " ");
-        const who = (log.actorTokenId && brief.actorLabels[log.actorTokenId]) || log.actorKind;
+        const who = brief.actorLabels[log.id] ?? log.actorKind;
         const excerpt = log.body.trim().replace(/\s+/g, " ");
         lines.push(
           `  ↳ last log ${when} by ${who}: ${excerpt.length > 300 ? `${excerpt.slice(0, 300)}…` : excerpt}`

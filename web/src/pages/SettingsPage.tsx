@@ -41,7 +41,19 @@ import {
   type Icon
 } from "@phosphor-icons/react";
 import { formatDistanceToNow } from "date-fns";
-import { useEffect, useId, useMemo, useState, type FormEvent, type ReactNode } from "react";
+import {
+  useEffect,
+  useId,
+  useMemo,
+  useRef,
+  useState,
+  type ChangeEvent,
+  type FormEvent,
+  type ReactNode
+} from "react";
+import { useQueryClient } from "@tanstack/react-query";
+import { MemberAvatar } from "../components/tasks/Assignee";
+import { squareAvatar } from "../lib/avatarImage";
 import { useNavigate } from "react-router-dom";
 import { api, type AccountUser, type Invite, type Member } from "../api/client";
 import {
@@ -49,6 +61,7 @@ import {
   useCreateToken,
   useEmbeddingSettings,
   useHealth,
+  useMe,
   useRevokeToken,
   useTokens,
   useUpdateEmbeddingSettings,
@@ -272,6 +285,7 @@ function AccountSection() {
       />
       <PasswordCard />
       <WorkspaceTimezoneCard />
+      <ContentLanguageCard />
       <div className={cn(CARD, "flex items-center justify-between gap-3 px-4 py-3")}>
         <div className="text-xs text-kumo-subtle">
           Sign out of this browser. Other devices and any active bearer tokens
@@ -400,6 +414,7 @@ function MembersSection() {
             key={m.id}
             className="flex items-center gap-3 border-b border-kumo-hairline px-4 py-2.5 last:border-b-0"
           >
+            <MemberAvatar id={m.id} name={m.name} size={28} />
             <div className="min-w-0 flex-1">
               <div className="truncate text-xs font-medium text-kumo-default">
                 {m.name}
@@ -520,6 +535,9 @@ function PasswordCard() {
   const [user, setUser] = useState<AccountUser | null>(null);
   const [name, setName] = useState("");
   const [savingName, setSavingName] = useState(false);
+  const [savingPicture, setSavingPicture] = useState(false);
+  const pictureInput = useRef<HTMLInputElement>(null);
+  const queryClient = useQueryClient();
   const [current, setCurrent] = useState("");
   const [next, setNext] = useState("");
   const [busy, setBusy] = useState(false);
@@ -541,6 +559,38 @@ function PasswordCard() {
   }, []);
 
   if (!user) return null;
+
+  function afterPictureChange(next: AccountUser) {
+    setUser(next);
+    void queryClient.invalidateQueries({ queryKey: ["members"] });
+    void queryClient.invalidateQueries({ queryKey: ["me"] });
+  }
+
+  async function onPickPicture(e: ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file || savingPicture) return;
+    setSavingPicture(true);
+    setResult(null);
+    try {
+      afterPictureChange((await api.setAvatar(await squareAvatar(file))).user);
+      setResult({ tone: "success", text: "Picture saved." });
+    } catch {
+      setResult({ tone: "error", text: "Could not use that picture. Try a PNG or JPEG." });
+    }
+    setSavingPicture(false);
+  }
+
+  async function onRemovePicture() {
+    setSavingPicture(true);
+    setResult(null);
+    try {
+      afterPictureChange((await api.removeAvatar()).user);
+    } catch {
+      setResult({ tone: "error", text: "Could not remove the picture." });
+    }
+    setSavingPicture(false);
+  }
 
   async function onSaveName() {
     if (savingName || !name.trim()) return;
@@ -580,8 +630,44 @@ function PasswordCard() {
     <form onSubmit={onSave} className={cn(CARD, "overflow-hidden")}>
       <CardHeader title="Signed in as" />
       <div className="space-y-3 px-4 py-3">
-        <div className="text-xs text-kumo-default">
-          {user.name} <span className="text-kumo-subtle">· {user.email} · {user.role}</span>
+        <div className="flex items-center gap-3">
+          <MemberAvatar id={user.id} name={user.name} size={48} />
+          <div className="min-w-0 flex-1">
+            <div className="truncate text-xs text-kumo-default">
+              {user.name} <span className="text-kumo-subtle">· {user.email} · {user.role}</span>
+            </div>
+            <div className="mt-1.5 flex flex-wrap items-center gap-2">
+              <input
+                ref={pictureInput}
+                type="file"
+                accept="image/png,image/jpeg,image/webp"
+                className="hidden"
+                aria-label="Profile picture file"
+                onChange={onPickPicture}
+              />
+              <Button
+                type="button"
+                variant="secondary"
+                size="sm"
+                loading={savingPicture}
+                disabled={savingPicture}
+                onClick={() => pictureInput.current?.click()}
+              >
+                {user.avatar ? "Change picture" : "Upload picture"}
+              </Button>
+              {user.avatar && (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  disabled={savingPicture}
+                  onClick={onRemovePicture}
+                >
+                  Remove
+                </Button>
+              )}
+            </div>
+          </div>
         </div>
         <div className="flex items-end gap-2">
           <Field label="Name" htmlFor="profile-name" className="min-w-0 flex-1">
@@ -730,6 +816,95 @@ function WorkspaceTimezoneCard() {
           {update.isPending ? "Saving..." : "Save"}
         </Button>
       </form>
+      {message && <Notice tone="success">{message}</Notice>}
+      {update.error && <Notice tone="error">{errorText(update.error)}</Notice>}
+    </div>
+  );
+}
+
+const CONTENT_LANGUAGE_OPTIONS: Array<[string, string]> = [
+  ["en", "English"],
+  ["zh-Hans", "简体中文"],
+  ["zh-Hant", "繁體中文"],
+  ["ja", "日本語"],
+  ["ko", "한국어"],
+  ["es", "Español"],
+  ["fr", "Français"],
+  ["de", "Deutsch"],
+  ["pt", "Português"]
+];
+const NO_LANGUAGE = "none";
+
+function contentLanguageLabel(value: string | null): string {
+  return CONTENT_LANGUAGE_OPTIONS.find(([code]) => code === value)?.[1] ?? "Agent decides";
+}
+
+function ContentLanguageCard() {
+  const { data } = useWorkspaceSettings();
+  const { data: me } = useMe();
+  const update = useUpdateWorkspaceSettings();
+  const [language, setLanguage] = useState(NO_LANGUAGE);
+  const [message, setMessage] = useState<string | null>(null);
+  const canManage = !me || me.role === "owner" || me.role === "admin";
+
+  useEffect(() => {
+    if (data) setLanguage(data.contentLanguage ?? NO_LANGUAGE);
+  }, [data]);
+
+  async function onSave(e: FormEvent) {
+    e.preventDefault();
+    setMessage(null);
+    await update.mutateAsync({ contentLanguage: language === NO_LANGUAGE ? null : language });
+    setMessage("Content language saved. Agents pick it up in their next session.");
+  }
+
+  return (
+    <div className={cn(CARD, "space-y-3 px-4 py-4")}>
+      <div>
+        <div className="text-sm font-semibold text-kumo-default">Content language</div>
+        <p className="mt-0.5 text-xs leading-relaxed text-kumo-subtle">
+          The language agents write task titles, descriptions, worklog and notes in, for everyone
+          on this instance. What is already written stays as it is. This does not change the
+          language of the interface.
+        </p>
+      </div>
+      <form onSubmit={onSave} className="flex items-end gap-3">
+        <Field label="Language" className="min-w-0 flex-1">
+          <Select<string>
+            size="sm"
+            aria-label="Content language"
+            value={language}
+            disabled={!canManage}
+            onValueChange={(v) => {
+              if (v !== null) {
+                setLanguage(v);
+                setMessage(null);
+              }
+            }}
+            renderValue={(v) => contentLanguageLabel(v)}
+            className="w-full"
+          >
+            <Select.Option value={NO_LANGUAGE} className="py-1 text-sm">
+              Agent decides
+            </Select.Option>
+            {CONTENT_LANGUAGE_OPTIONS.map(([code, label]) => (
+              <Select.Option key={code} value={code} className="py-1 text-sm">
+                {label}
+              </Select.Option>
+            ))}
+          </Select>
+        </Field>
+        <Button
+          type="submit"
+          variant="primary"
+          size="sm"
+          icon={<CheckIcon size={12} weight="bold" />}
+          disabled={update.isPending || !canManage}
+        >
+          {update.isPending ? "Saving..." : "Save"}
+        </Button>
+      </form>
+      {!canManage && <Notice tone="info">Only the owner or an admin can change this.</Notice>}
       {message && <Notice tone="success">{message}</Notice>}
       {update.error && <Notice tone="error">{errorText(update.error)}</Notice>}
     </div>

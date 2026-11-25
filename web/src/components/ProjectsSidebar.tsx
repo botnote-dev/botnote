@@ -95,35 +95,30 @@ export function ProjectsSidebar() {
               to="/today"
               icon={SunHorizonIcon}
               label="Today"
-              shortcut="g t"
               active={isActive("/today")}
             />
             <NavItem
               to="/"
               icon={CalendarBlankIcon}
               label="Tasks"
-              shortcut="g d"
               active={isActive("/", true)}
             />
             <NavItem
               to="/inbox"
               icon={TrayIcon}
               label="Inbox"
-              shortcut="g i"
               active={isActive("/inbox")}
             />
             <NavItem
               to="/okr"
               icon={TargetIcon}
               label="OKR"
-              shortcut="g o"
               active={isActive("/okr")}
             />
             <NavItem
               to="/dashboard"
               icon={SquaresFourIcon}
               label="Workspace"
-              shortcut="g w"
               active={isActive("/dashboard")}
             />
           </Sidebar.Menu>
@@ -238,14 +233,12 @@ function NavItem({
   to,
   icon,
   label,
-  shortcut,
   active,
   children
 }: {
   to: string;
   icon: Icon;
   label: string;
-  shortcut?: string;
   active: boolean;
   children?: ReactNode;
 }) {
@@ -253,11 +246,6 @@ function NavItem({
     <Sidebar.MenuButton href={to} icon={icon} active={active} className={ACTIVE_ITEM}>
       {label}
       {children}
-      {shortcut && (
-        <kbd className="ml-auto opacity-0 transition-opacity group-hover/menu-button:opacity-100">
-          {shortcut}
-        </kbd>
-      )}
     </Sidebar.MenuButton>
   );
 }

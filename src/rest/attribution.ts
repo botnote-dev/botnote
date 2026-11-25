@@ -1,8 +1,9 @@
 /**
  * Response decoration for write attribution. Every serialized entity carries
  * `actorKind` and `actorTokenId`; this adds the additive `actor` field
- * (`{ kind, label }`) where label is the token's name when the row was written
- * through an API token, otherwise the bare actor kind. Runs as a
+ * (`{ kind, label }`) where label is the name of the person who wrote the row,
+ * or whose agent did. Before the instance has accounts there is no person, so
+ * the label falls back to the token's name, then the bare actor kind. Runs as a
  * preSerialization hook so all 30-odd entity-returning routes get it without
  * each one resolving labels.
  */
@@ -12,6 +13,8 @@ export interface ActorInfo {
   label: string;
   /** The person who wrote it, or whose agent did. Absent before accounts. */
   user?: string;
+  /** Name of the API token the write came through, when it still exists. */
+  token?: string;
 }
 
 /** Whose task it is. `me` is true when it is the caller's. */
@@ -91,8 +94,9 @@ export async function attachActorLabels(
     const tokenLabel = t.actorTokenId ? labels.get(t.actorTokenId) : undefined;
     t.actor = {
       kind: t.actorKind,
-      label: tokenLabel ?? (t.actorKind === "human" && user ? user : t.actorKind),
-      ...(user ? { user } : {})
+      label: user ?? tokenLabel ?? t.actorKind,
+      ...(user ? { user } : {}),
+      ...(tokenLabel ? { token: tokenLabel } : {})
     };
     if ("assigneeUserId" in t) {
       const name = t.assigneeUserId ? names.get(t.assigneeUserId) : undefined;

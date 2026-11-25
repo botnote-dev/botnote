@@ -1042,6 +1042,26 @@ describe("botnote service", () => {
       metadata: {}
     });
     const hits = await search(S, db, { query: "RRF hybrid", projectId: p.id, limit: 5 });
+    const zh = await write(S, db, {
+      kind: "task",
+      projectId: p.id,
+      title: "先提升付费转化，再扩展自然流量",
+      body: "基线：注册 549 个。结账页用 Stripe，折扣 50%_off。",
+      tags: [],
+      status: "open",
+      actorKind: "human",
+      metadata: {}
+    });
+    const find = async (query: string) =>
+      (await search(S, db, { query, projectId: p.id, limit: 5 })).map((h) => h.entity.id);
+    expect(await find("付费转化")).toContain(zh.id);
+    expect(await find("自然流量 付费")).toContain(zh.id);
+    expect(await find("Stripe 结账")).toContain(zh.id);
+    expect(await find("注册　基线")).toContain(zh.id);
+    expect(await find("退款")).not.toContain(zh.id);
+    expect(await find("付费 退款")).not.toContain(zh.id);
+    expect(await find("50%_off")).toContain(zh.id);
+    expect(await find("50%xoff")).not.toContain(zh.id);
     expect(hits.length).toBeGreaterThan(0);
     expect(hits[0]?.entity.title).toBe("Postgres hybrid retrieval");
   });
@@ -2110,7 +2130,7 @@ describe("botnote service", () => {
     );
 
     const brief = await openingBrief(S, db, { projectId: p.id, recentLimit: 5 });
-    expect(brief.actorLabels).toEqual({ [token.id]: "Codex @ Mini" });
+    expect(Object.values(brief.actorLabels)).toEqual(["Codex @ Mini"]);
     const formatted = formatOpeningBrief(brief);
     expect(formatted).toContain("by Codex @ Mini: Parser done, REST layer next.");
   });

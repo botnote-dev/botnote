@@ -87,7 +87,11 @@ export async function tasksRange(
 ): Promise<TasksRangeResult> {
   const now = new Date();
 
-  const inWorkspace = entityInScope(scope);
+  // The assignee is part of the base scope, not of one pass: every bucket
+  // (scheduled, done, in progress, overdue, backlog, recurring previews) must
+  // answer for the same people.
+  const assignee = await assigneeFilter(scope, db, input.assignee ?? null);
+  const inWorkspace = assignee ? and(entityInScope(scope), assignee)! : entityInScope(scope);
   const projectFilter = input.projectIds?.length
     ? inArray(entities.projectId, input.projectIds)
     : undefined;
@@ -105,11 +109,8 @@ export async function tasksRange(
   // and the includeDone toggle. Rejected/archived work is excluded everywhere:
   // includeDone means "show completion history", not "show abandoned work",
   // and a cancelled task with a leftover dueAt is not scheduled for anything.
-  const assignee = await assigneeFilter(scope, db, input.assignee ?? null);
-
   const baseConds: SQL[] = [
     inWorkspace,
-    ...(assignee ? [assignee] : []),
     eq(entities.kind, "task"),
     isNull(entities.deletedAt),
     notStatus("rejected"),
@@ -254,7 +255,7 @@ export async function tasksRange(
       .limit(200);
   }
 
-  const virtualOccurrences = await expandVirtualOccurrences(scope, db, input, scheduled);
+  const virtualOccurrences = await expandVirtualOccurrences(scope, db, input, scheduled, assignee);
   const taskIds = [...scheduled, ...overdue, ...backlog].map((t) => t.id);
   const [blockers, hierarchy] = await Promise.all([
     blockersFor(scope, db, taskIds),
@@ -287,7 +288,8 @@ async function expandVirtualOccurrences(
   scope: Scope,
   db: Database["db"],
   input: TasksRangeInput,
-  realScheduled: Entity[]
+  realScheduled: Entity[],
+  assignee: SQL | null
 ): Promise<VirtualOccurrence[]> {
   // Guard: feature must be explicitly requested and a horizon must be present.
   if (!input.includeVirtualRecurrences || !input.to) return [];
@@ -327,7 +329,11 @@ async function expandVirtualOccurrences(
     .select()
     .from(entities)
     .where(
-      and(entityInScope(scope), inArray(entities.id, uniqueDisplaySourceIds))
+      and(
+        entityInScope(scope),
+        inArray(entities.id, uniqueDisplaySourceIds),
+        ...(assignee ? [assignee] : [])
+      )
     );
   const displaySourceById = new Map<string, Entity>(
     displaySourceRows.map((e) => [e.id, e])

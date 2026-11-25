@@ -3,6 +3,7 @@ import { useMemo } from "react";
 import type { Entity, Project } from "../api/types";
 import { useProjects, useTasksRange } from "../api/hooks";
 import { ProjectIcon } from "../components/ProjectIcon";
+import { AssigneeFilter } from "../components/tasks/AssigneeFilter";
 import { TaskRow } from "../components/tasks/TaskRow";
 import { projectLookup } from "../components/tasks/utils";
 import { useModals } from "../state/modals";
@@ -37,6 +38,7 @@ export function InboxPage() {
           <TrayIcon size={18} className="text-kumo-brand" />
           <h1 className="text-lg font-semibold">Inbox</h1>
           <span className="text-xs text-kumo-subtle">Tasks without due date</span>
+          <AssigneeFilter className="ml-auto" />
         </header>
 
         <p className="text-xs text-kumo-subtle">

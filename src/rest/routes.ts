@@ -67,6 +67,7 @@ import {
   updateEmbeddingSettings
 } from "../service/embedding_settings.js";
 import {
+  contentLanguageRule,
   getWorkspaceSettings,
   updateWorkspaceSettings
 } from "../service/workspace_settings.js";
@@ -80,9 +81,12 @@ import {
   PASSWORD_MIN_LENGTH,
   authenticate,
   changePassword,
+  clearAvatar,
   createOwner,
   getAccount,
+  getAvatar,
   hasUsers,
+  setAvatar,
   updateProfile
 } from "../service/users.js";
 import {
@@ -220,6 +224,7 @@ async function workspaceSettingsResponse(scope: Scope, db: ServerContext["db"]) 
   const settings = await getWorkspaceSettings(scope, db);
   return {
     timezone: settings.timezone,
+    contentLanguage: settings.contentLanguage,
     updatedAt: settings.updatedAt
   };
 }
@@ -345,7 +350,7 @@ export async function registerRoutes(
     {
       schema: {
         tags: ["settings"],
-        summary: "Read workspace settings (timezone)"
+        summary: "Read workspace settings (timezone, content language)"
       }
     },
     async (req) => workspaceSettingsResponse(req.scope, ctx.db)
@@ -357,7 +362,7 @@ export async function registerRoutes(
       config: { rateLimit: { max: 30, timeWindow: "1 hour" } },
       schema: {
         tags: ["settings"],
-        summary: "Update workspace settings (timezone)",
+        summary: "Update workspace settings (timezone, content language)",
         body: UpdateWorkspaceSettingsInput
       }
     },
@@ -387,6 +392,8 @@ export async function registerRoutes(
       return {
         now: new Date().toISOString(),
         timezone: settings.timezone,
+        contentLanguage: settings.contentLanguage,
+        contentLanguageRule: contentLanguageRule(settings.contentLanguage),
         version: VERSION,
         projects: projects.map((p) => ({ key: p.key, name: p.name, status: p.status }))
       };
@@ -1520,6 +1527,57 @@ export async function registerRoutes(
       }
       await updateProfile(ctx.db, req.userId, body);
       return { ok: true, user: await getAccount(req.scope, ctx.db, req.userId) };
+    }
+  );
+
+  const AvatarBody = z.object({ image: z.string().min(1).max(400_000) });
+
+  app.put(
+    "/v1/auth/avatar",
+    {
+      config: { rateLimit: { max: 30, timeWindow: "1 hour" } },
+      schema: {
+        tags: ["auth"],
+        summary: "Set your own profile picture from a base64 image data URL.",
+        body: AvatarBody
+      }
+    },
+    async (req, reply) => {
+      const body = AvatarBody.parse(req.body);
+      if (!req.userId) {
+        return reply.code(403).send({
+          error: "no_account",
+          message: "Sign in to the web UI with your email to change your profile."
+        });
+      }
+      await setAvatar(ctx.db, req.userId, body.image);
+      return { ok: true, user: await getAccount(req.scope, ctx.db, req.userId) };
+    }
+  );
+
+  app.delete(
+    "/v1/auth/avatar",
+    { schema: { tags: ["auth"], summary: "Remove your own profile picture." } },
+    async (req, reply) => {
+      if (!req.userId) return reply.code(403).send({ error: "no_account" });
+      await clearAvatar(ctx.db, req.userId);
+      return { ok: true, user: await getAccount(req.scope, ctx.db, req.userId) };
+    }
+  );
+
+  app.get(
+    "/v1/users/:id/avatar",
+    { schema: { tags: ["members"], summary: "A member's profile picture.", params: IdParams } },
+    async (req, reply) => {
+      const { id } = IdParams.parse(req.params);
+      const avatar = await getAvatar(req.scope, ctx.db, id);
+      if (!avatar) return reply.code(404).send({ error: "not_found" });
+      return reply
+        .header("content-type", avatar.type)
+        .header("x-content-type-options", "nosniff")
+        .header("content-security-policy", "default-src 'none'")
+        .header("cache-control", "private, max-age=31536000, immutable")
+        .send(avatar.bytes);
     }
   );
 

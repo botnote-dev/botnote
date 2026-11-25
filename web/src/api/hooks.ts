@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "./client";
+import { useAssigneeFilter } from "../state/assigneeFilter";
 import type {
   CreateProjectInput,
   CreateWorklogEntryInput,
@@ -242,10 +243,19 @@ export function useUpdateWorkspaceSettings() {
   });
 }
 
-export function useTasksRange(input: TasksRangeInput, opts: { poll?: boolean } = {}) {
+/**
+ * Tasks in a date range, limited to the people picked in the assignee filter.
+ * `everyone` skips the filter for views that count the whole instance.
+ */
+export function useTasksRange(
+  input: TasksRangeInput,
+  opts: { poll?: boolean; everyone?: boolean } = {}
+) {
+  const { param } = useAssigneeFilter();
+  const scoped = param && !opts.everyone ? { ...input, assignee: param } : input;
   return useQuery({
-    queryKey: ["tasks-range", input],
-    queryFn: () => api.tasksRange(input),
+    queryKey: ["tasks-range", scoped],
+    queryFn: () => api.tasksRange(scoped),
     refetchInterval: opts.poll === false ? false : POLL_INTERVAL
   });
 }

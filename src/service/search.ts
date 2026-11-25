@@ -88,6 +88,20 @@ function keyMatchScore(rank: number | undefined): number {
 
 type IdRow = { id: string };
 
+/** Han, kana and hangul: text that carries no spaces between words. */
+const UNSPACED_SCRIPT = /[\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff\uac00-\ud7af]/;
+
+const MAX_LIKE_TERMS = 8;
+
+/** The query's terms as ILIKE patterns, with LIKE wildcards taken literally. */
+function likePatterns(query: string): string[] {
+  return query
+    .split(/[\s\u3000]+/)
+    .filter(Boolean)
+    .slice(0, MAX_LIKE_TERMS)
+    .map((term) => `%${term.replace(/[\\%_]/g, (c) => `\\${c}`)}%`);
+}
+
 /** Rows arrive in the sub-query's ORDER BY; position is the modality rank. */
 function rankMap(rows: IdRow[]): Map<string, number> {
   const m = new Map<string, number>();
@@ -173,6 +187,32 @@ export async function search(
   const commonFilter = sql`${wsFilter} ${projectFilter} ${kindFilter} ${activeProjectFilter} ${notTrashed}`;
   const fetchN = Math.max(input.limit * 4, 40);
 
+  // Substring match on every whitespace-separated term. This is the lexical
+  // leg for scripts written without spaces (Chinese, Japanese, Korean): the
+  // 'simple' text-search configuration indexes a whole unspaced run as one
+  // token, so a word inside a sentence never matches there.
+  const substringRows = async (): Promise<IdRow[]> => {
+    const terms = likePatterns(input.query);
+    if (terms.length === 0) return [];
+    const allTerms = sql.join(
+      terms.map((t) => sql`(coalesce(title, '') ILIKE ${t} OR body ILIKE ${t})`),
+      sql` AND `
+    );
+    const titleHits = sql.join(
+      terms.map((t) => sql`(coalesce(title, '') ILIKE ${t})::int`),
+      sql` + `
+    );
+    return (
+      await db.execute<IdRow>(sql`
+        SELECT id
+        FROM entities
+        WHERE ${allTerms} ${commonFilter}
+        ORDER BY ${titleHits} DESC, created_at DESC
+        LIMIT ${fetchN}
+      `)
+    ).rows;
+  };
+
   const lexicalRows = async (): Promise<IdRow[]> => {
     const bm25 = (
       await db.execute<IdRow>(sql`
@@ -183,17 +223,13 @@ export async function search(
         LIMIT ${fetchN}
       `)
     ).rows;
+    if (UNSPACED_SCRIPT.test(input.query)) {
+      const substring = await substringRows();
+      const seen = new Set(substring.map((r) => r.id));
+      return [...substring, ...bm25.filter((r) => !seen.has(r.id))].slice(0, fetchN);
+    }
     if (bm25.length > 0) return bm25;
-    return (
-      await db.execute<IdRow>(sql`
-        SELECT id
-        FROM entities
-        WHERE (title ILIKE ${`%${input.query}%`} OR body ILIKE ${`%${input.query}%`})
-          ${commonFilter}
-        ORDER BY created_at DESC
-        LIMIT ${fetchN}
-      `)
-    ).rows;
+    return substringRows();
   };
 
   const keyRefs = opts.matchKeys === false ? [] : parseKeyRefs(input.query);

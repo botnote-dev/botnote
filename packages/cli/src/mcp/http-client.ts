@@ -317,8 +317,9 @@ export interface EntityDTO {
   parentId: string | null;
   actorKind: string;
   actorTokenId?: string | null;
-  /** Resolved author: label is the token name when written via a token, else actorKind. */
-  actor?: { kind: string; label: string; user?: string };
+  /** Resolved author: label is the person's name; on a server without accounts
+   *  the token name, else actorKind. */
+  actor?: { kind: string; label: string; user?: string; token?: string };
   /** Tasks only: whose task it is. Absent on servers without assignees. */
   assignee?: { id: string; name: string; me: boolean } | null;
   metadata: Record<string, unknown>;
@@ -587,6 +588,10 @@ export interface LinkResultDTO {
 export interface ContextDTO {
   now: string;
   timezone: string;
+  /** Language code for stored content, and the instruction that goes with it.
+   *  Absent on older servers, null when the instance has none. */
+  contentLanguage?: string | null;
+  contentLanguageRule?: string | null;
   version: string;
   projects: Array<{ key: string; name: string; status: string }>;
 }

@@ -277,6 +277,9 @@ export const users = pgTable(
     email: text("email").notNull(),
     name: text("name").notNull(),
     passwordHash: text("password_hash"),
+    avatarData: text("avatar_data"),
+    avatarType: text("avatar_type"),
+    avatarUpdatedAt: timestamp("avatar_updated_at", { withTimezone: true }),
     disabledAt: timestamp("disabled_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow()
@@ -365,6 +368,7 @@ export const entityRevisions = pgTable(
     status: text("status").notNull().default("open"),
     actorKind: text("actor_kind").notNull().default("human"),
     actorTokenId: uuid("actor_token_id").references(() => tokens.id, { onDelete: "set null" }),
+    authorUserId: uuid("author_user_id").references(() => users.id, { onDelete: "set null" }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow()
   },
   (t) => ({
@@ -394,6 +398,7 @@ export const workspaceSettings = pgTable("workspace_settings", {
   id: text("id").notNull().default("default"),
   workspaceId: workspaceRef().primaryKey(),
   timezone: text("timezone").notNull().default("UTC"),
+  contentLanguage: text("content_language"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow()
 });

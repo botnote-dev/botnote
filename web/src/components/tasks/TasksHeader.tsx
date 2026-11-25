@@ -7,6 +7,7 @@ import type { Project } from "../../api/types";
 import { useModals } from "../../state/modals";
 import type { TaskSort } from "./sorting";
 import { moveAnchor, rangeLabel, type CalendarView } from "./utils";
+import { AssigneeFilter } from "./AssigneeFilter";
 import { ViewOptionsMenu } from "./ViewOptionsMenu";
 
 const VIEW_TABS = [
@@ -86,6 +87,7 @@ export function TasksHeader({
 
       <div className="flex shrink-0 items-center gap-2">
         <ViewOptionsMenu sort={sort} setSort={setSort} />
+        <AssigneeFilter />
         <ProjectFilter
           projects={projects ?? []}
           projectIds={projectIds}
@@ -100,7 +102,6 @@ export function TasksHeader({
           onClick={() => open({ kind: "quick-create" })}
         >
           <span className="hidden sm:inline">Task</span>
-          <kbd className="hidden border-white/25 bg-white/15 text-white md:inline-flex">c</kbd>
         </Button>
       </div>
     </div>
