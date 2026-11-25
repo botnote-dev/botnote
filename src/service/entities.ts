@@ -456,7 +456,8 @@ export async function update(
         priority: prior[0].priority,
         status: prior[0].status,
         actorKind: attribution.actorTokenId ? "agent" : "human",
-        actorTokenId: attribution.actorTokenId ?? null
+        actorTokenId: attribution.actorTokenId ?? null,
+        authorUserId: scope.userId ?? null
       };
     }
   }

@@ -7,6 +7,7 @@ import { ProjectIcon } from "../components/ProjectIcon";
 import { TaskRow } from "../components/tasks/TaskRow";
 import { groupTasks, sortTasks, type TaskGroup, type TaskSort } from "../components/tasks/sorting";
 import { isTaskOverdue, projectLookup } from "../components/tasks/utils";
+import { AssigneeFilter } from "../components/tasks/AssigneeFilter";
 import { ViewOptionsMenu } from "../components/tasks/ViewOptionsMenu";
 import { usePersistedState } from "../hooks/usePersistedState";
 import { useModals } from "../state/modals";
@@ -42,6 +43,7 @@ export function TodayPage() {
   const scheduled = sortTasks(data?.scheduled ?? [], sort, projectMap);
   const total = overdue.length + scheduled.length;
   const done = scheduled.filter((t) => t.status === "done").length;
+  const inProgress = [...overdue, ...scheduled].filter((t) => t.status === "in_progress").length;
 
   return (
     <div className="h-full overflow-y-auto scrollbar-thin">
@@ -51,11 +53,12 @@ export function TodayPage() {
             <SunHorizonIcon size={18} className="text-kumo-brand" />
             <h1 className="text-lg font-semibold">Today</h1>
             <span className="text-xs text-kumo-subtle">{format(today, "EEEE, MMM d")}</span>
-            <div className="ml-auto">
+            <div className="ml-auto flex items-center gap-2">
+              <AssigneeFilter />
               <ViewOptionsMenu sort={sort} setSort={setSort} group={group} setGroup={setGroup} />
             </div>
           </div>
-          {!isLoading && total > 0 && <Progress done={done} total={total} />}
+          {!isLoading && total > 0 && <Progress done={done} total={total} inProgress={inProgress} overdue={overdue.length} />}
         </header>
 
         {isLoading && <div className="text-sm text-kumo-subtle">Loading…</div>}
@@ -94,23 +97,48 @@ export function TodayPage() {
   );
 }
 
-function Progress({ done, total }: { done: number; total: number }) {
+function Progress({
+  done,
+  total,
+  inProgress,
+  overdue
+}: {
+  done: number;
+  total: number;
+  inProgress: number;
+  overdue: number;
+}) {
   const pct = Math.round((done / total) * 100);
+  const startedPct = Math.round((inProgress / total) * 100);
   return (
-    <div className="flex items-center gap-3 text-xs">
+    <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 text-xs">
       <span className="tabular-nums text-kumo-default">
         <span className="font-semibold">{done}</span>
         <span className="text-kumo-subtle"> / {total} done</span>
       </span>
+      {inProgress > 0 && (
+        <span className="tabular-nums text-kumo-warning">
+          <span className="font-semibold">{inProgress}</span> in progress
+        </span>
+      )}
+      {overdue > 0 && (
+        <span className="tabular-nums text-kumo-danger">
+          <span className="font-semibold">{overdue}</span> overdue
+        </span>
+      )}
       <div
-        className="h-1.5 flex-1 overflow-hidden rounded-full bg-kumo-fill"
+        className="flex h-1.5 min-w-24 flex-1 overflow-hidden rounded-full bg-kumo-fill"
         role="progressbar"
         aria-valuenow={done}
         aria-valuemin={0}
         aria-valuemax={total}
-        aria-label="Tasks done today"
+        aria-label={`Tasks done today: ${done} of ${total}, ${inProgress} in progress, ${overdue} overdue`}
       >
-        <div className="h-full rounded-full bg-kumo-brand transition-all" style={{ width: `${pct}%` }} />
+        <div className="h-full bg-kumo-brand transition-all" style={{ width: `${pct}%` }} />
+        <div
+          className="h-full bg-kumo-warning/70 transition-all"
+          style={{ width: `${startedPct}%` }}
+        />
       </div>
       <span className="tabular-nums text-kumo-subtle">{pct}%</span>
     </div>

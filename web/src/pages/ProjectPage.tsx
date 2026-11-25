@@ -9,9 +9,11 @@ import {
   SlidersHorizontalIcon,
   UsersIcon
 } from "@phosphor-icons/react";
-import { useMemo, useState } from "react";
+import { useMemo } from "react";
 import { useParams, useSearchParams } from "react-router-dom";
-import { useMe, useMembers, useProjectByKey, useProjectTasks } from "../api/hooks";
+import { useMe, useProjectByKey, useProjectTasks } from "../api/hooks";
+import { AssigneeFilter } from "../components/tasks/AssigneeFilter";
+import { useAssigneeFilter } from "../state/assigneeFilter";
 import { KanbanBoard } from "../components/project/KanbanBoard";
 import { NotesList } from "../components/project/NotesList";
 import { ProjectIcon } from "../components/ProjectIcon";
@@ -29,15 +31,12 @@ export function ProjectPage() {
   const { data: tasks } = useProjectTasks(project?.id);
   const { open: openModal } = useModals();
   const { data: me } = useMe();
-  const { data: members } = useMembers();
-  const [whose, setWhose] = useState<"everyone" | "mine">("everyone");
-  const canFilter = Boolean(me) && (members?.length ?? 0) > 1 && project?.visibility === "shared";
+  const whose = useAssigneeFilter();
+  // A private project holds one person's tasks; there is nothing to pick.
+  const canFilter = whose.available && project?.visibility === "shared";
   const shownTasks = useMemo(
-    () =>
-      canFilter && whose === "mine"
-        ? (tasks ?? []).filter((t) => t.assigneeUserId === me?.id)
-        : (tasks ?? []),
-    [tasks, canFilter, whose, me?.id]
+    () => (canFilter ? (tasks ?? []).filter(whose.matches) : (tasks ?? [])),
+    [tasks, canFilter, whose]
   );
 
   const counts = useMemo(() => {
@@ -98,18 +97,7 @@ export function ProjectPage() {
           />
         </div>
         <div className="flex shrink-0 items-center gap-2">
-          {canFilter && tab === "tasks" && (
-            <Tabs
-              variant="segmented"
-              size="sm"
-              value={whose}
-              onValueChange={(v) => setWhose(v as "everyone" | "mine")}
-              tabs={[
-                { value: "everyone", label: "Everyone" },
-                { value: "mine", label: "Mine" }
-              ]}
-            />
-          )}
+          {canFilter && tab === "tasks" && <AssigneeFilter />}
           <Tabs
             variant="segmented"
             size="sm"

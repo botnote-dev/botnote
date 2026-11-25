@@ -57,6 +57,13 @@ export type ProjectVisibility = "private" | "shared";
 export type Priority = "urgent" | "high" | "medium" | "low" | "none";
 export const PRIORITY_LEVELS: Priority[] = ["urgent", "high", "medium", "low", "none"];
 
+export interface ActorInfo {
+  kind: string;
+  label: string;
+  user?: string;
+  token?: string;
+}
+
 export interface Entity {
   id: string;
   projectId: string | null;
@@ -68,8 +75,9 @@ export interface Entity {
   actorId: string | null;
   actorKind: ActorKind;
   actorTokenId?: string | null;
-  /** Resolved author: the API token's name when written through one, else actorKind. */
-  actor?: { kind: string; label: string; user?: string };
+  /** Resolved author: label is the person's name; without accounts the API
+   *  token's name, else actorKind. `token` is the token the write came through. */
+  actor?: ActorInfo;
   /** The person behind the write. null before the instance had accounts. */
   authorUserId?: string | null;
   /** Tasks only: whose task it is. */
@@ -109,7 +117,7 @@ export interface EntityRevision {
   actorKind: ActorKind;
   actorTokenId: string | null;
   /** Who made the update that replaced this snapshot. */
-  actor?: { kind: string; label: string };
+  actor?: ActorInfo;
   createdAt: string;
 }
 
@@ -152,6 +160,8 @@ export interface TasksRangeInput {
   includeBacklog?: boolean;
   includeDone?: boolean;
   includeVirtualRecurrences?: boolean;
+  /** A member's id, or "none" for unassigned. Omitted: everyone's. */
+  assignee?: string;
 }
 
 export interface TasksRangeResult {
@@ -401,11 +411,14 @@ export interface SearchInput {
 
 export interface WorkspaceSettings {
   timezone: string;
+  /** Language code agents write content in; null leaves it to the agent. */
+  contentLanguage: string | null;
   updatedAt: string;
 }
 
 export interface UpdateWorkspaceSettingsInput {
   timezone?: string;
+  contentLanguage?: string | null;
 }
 
 export type OkrStatus = "open" | "in_progress" | "done" | "rejected";

@@ -13,7 +13,7 @@ import {
   type WorkspaceInvite
 } from "../db/schema.js";
 import { assertAdmin, type Scope } from "./scope.js";
-import { defaultName, hashPassword, normalizeEmail, type Account } from "./users.js";
+import { avatarPath, defaultName, hashPassword, normalizeEmail, type Account } from "./users.js";
 
 /**
  * People in a workspace: who is a member, how they get in (invite links, no
@@ -78,18 +78,23 @@ export interface Member extends Account {
 }
 
 export async function listMembers(scope: Scope, db: Database["db"]): Promise<Member[]> {
-  return db
+  const rows = await db
     .select({
       id: users.id,
       email: users.email,
       name: users.name,
       role: workspaceMembers.role,
-      joinedAt: workspaceMembers.createdAt
+      joinedAt: workspaceMembers.createdAt,
+      avatarUpdatedAt: users.avatarUpdatedAt
     })
     .from(workspaceMembers)
     .innerJoin(users, eq(users.id, workspaceMembers.userId))
     .where(and(eq(workspaceMembers.workspaceId, scope.workspaceId), isNull(users.disabledAt)))
     .orderBy(asc(workspaceMembers.createdAt));
+  return rows.map(({ avatarUpdatedAt, ...member }) => ({
+    ...member,
+    avatar: avatarPath(member.id, avatarUpdatedAt)
+  }));
 }
 
 export interface CreatedInvite {
@@ -240,7 +245,19 @@ export async function acceptInvite(
       .update(workspaceInvites)
       .set({ acceptedAt: new Date(), acceptedBy: userId })
       .where(eq(workspaceInvites.id, invite.id));
-    return { id: userId, email, name, role: invite.role, workspaceId: invite.workspaceId };
+    // A returning person starts without a picture, like a new one.
+    await tx
+      .update(users)
+      .set({ avatarData: null, avatarType: null, avatarUpdatedAt: null })
+      .where(eq(users.id, userId));
+    return {
+      id: userId,
+      email,
+      name,
+      role: invite.role,
+      avatar: null,
+      workspaceId: invite.workspaceId
+    };
   });
 }
 

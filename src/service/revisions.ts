@@ -21,6 +21,7 @@ export interface RevisionSnapshot {
   /** Who is making the change that replaces this snapshot. */
   actorKind: string;
   actorTokenId: string | null;
+  authorUserId: string | null;
 }
 
 /**
@@ -38,7 +39,8 @@ export async function recordRevision(exec: Executor, snap: RevisionSnapshot): Pr
     priority: snap.priority,
     status: snap.status,
     actorKind: snap.actorKind,
-    actorTokenId: snap.actorTokenId
+    actorTokenId: snap.actorTokenId,
+    authorUserId: snap.authorUserId
   });
   await exec.execute(sql`
     DELETE FROM entity_revisions

@@ -52,6 +52,8 @@ export interface AccountUser {
   email: string;
   name: string;
   role: "owner" | "admin" | "member";
+  /** Path of the profile picture; null or absent when the person has none. */
+  avatar?: string | null;
 }
 
 export interface Member extends AccountUser {
@@ -317,6 +319,13 @@ export const api = {
       method: "PATCH",
       body: JSON.stringify(input)
     }),
+  setAvatar: (image: string) =>
+    request<{ ok: boolean; user: AccountUser }>("/v1/auth/avatar", {
+      method: "PUT",
+      body: JSON.stringify({ image })
+    }),
+  removeAvatar: () =>
+    request<{ ok: boolean; user: AccountUser }>("/v1/auth/avatar", { method: "DELETE" }),
   lookupInvite: (token: string) =>
     request<InviteInfo>("/v1/auth/invite/lookup", {
       method: "POST",

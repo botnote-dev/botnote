@@ -1,4 +1,4 @@
-import { AssigneeButton } from "./tasks/Assignee";
+import { AssigneeButton, MemberAvatar } from "./tasks/Assignee";
 import { markdown } from "@codemirror/lang-markdown";
 import { Button } from "@cloudflare/kumo/components/button";
 import { Input, InputArea } from "@cloudflare/kumo/components/input";
@@ -44,6 +44,7 @@ import {
   useSkipOccurrence,
   useSplitRecurrence,
   useStopRecurrence,
+  useMe,
   useMembers,
   useUpdateEntity,
   useWorklog
@@ -64,6 +65,7 @@ import { useEditorTheme } from "../hooks/useEditorTheme";
 import { useDrawer } from "../hooks/useDrawer";
 import { useUndoableDelete } from "../hooks/useUndoableDelete";
 import { displayTitle, isUntitled } from "../lib/entityTitle";
+import { actorText } from "../lib/actor";
 import { useModals } from "../state/modals";
 import { parseRRule, RECURRENCE_PRESETS, RECURRENCE_WEEKDAYS } from "../lib/rrule";
 import { applyRecurrenceScope } from "../lib/recurrenceScope";
@@ -488,7 +490,7 @@ function DrawerContent({ id, onClose }: { id: string; onClose: () => void }) {
               setCompletedAtStr(v);
             }}
             createdAt={entity.createdAt}
-            actorKind={entity.actor?.label ?? entity.actorKind}
+            actorKind={actorText(entity)}
             task={loadedEntity.kind === "task" ? { ...loadedEntity, status } : undefined}
             onStatusChange={setStatus}
             recurrence={recurrence}
@@ -660,7 +662,7 @@ function RevisionRow({
     () => (bodyChanged ? withContext(lineDiff(before.body, after.body)) : []),
     [bodyChanged, before.body, after.body]
   );
-  const who = before.actor?.label ?? before.actorKind;
+  const who = actorText(before);
 
   return (
     <div className="px-3 py-2 text-xs">
@@ -1749,8 +1751,22 @@ const ACTOR_AVATAR: Record<string, { icon: Icon; className: string }> = {
   system: { icon: GearSixIcon, className: "bg-kumo-fill text-kumo-subtle" }
 };
 
-function ActorAvatar({ kind }: { kind: string }) {
+/**
+ * Who wrote a timeline entry. A person's own entry shows their face; an
+ * agent's keeps the robot, so the two are told apart at a glance.
+ */
+function ActorAvatar({ kind, person }: { kind: string; person?: { id: string; name: string } | null }) {
   const { icon: AvatarIcon, className } = ACTOR_AVATAR[kind] ?? ACTOR_AVATAR.system!;
+  if (kind === "human" && person) {
+    return (
+      <MemberAvatar
+        id={person.id}
+        name={person.name}
+        size={24}
+        className="relative z-10 ring-4 ring-kumo-base"
+      />
+    );
+  }
   return (
     <span
       className={cn(
@@ -1768,6 +1784,13 @@ function actorName(entity: Entity): string {
   return label === entity.actorKind ? label.charAt(0).toUpperCase() + label.slice(1) : label;
 }
 
+function actorHint(entity: Entity): string | undefined {
+  const { actor } = entity;
+  if (!actor?.user) return undefined;
+  if (entity.actorKind !== "agent") return actor.user;
+  return actor.token ? `${actor.user}'s agent, token "${actor.token}"` : `${actor.user}'s agent`;
+}
+
 function relativeTime(iso: string): string {
   const date = new Date(iso);
   const age = Date.now() - date.getTime();
@@ -1780,10 +1803,19 @@ function WorklogEntry({ entry, isLast }: { entry: Entity; isLast: boolean }) {
   return (
     <li className="relative flex gap-3 pb-5">
       {!isLast && <TimelineRail />}
-      <ActorAvatar kind={entry.actorKind} />
+      <ActorAvatar
+        kind={entry.actorKind}
+        person={
+          entry.authorUserId && entry.actor?.user
+            ? { id: entry.authorUserId, name: entry.actor.user }
+            : null
+        }
+      />
       <div className="min-w-0 flex-1">
         <div className="flex h-6 items-center gap-2 text-xs">
-          <span className="truncate font-medium text-kumo-default">{actorName(entry)}</span>
+          <span className="truncate font-medium text-kumo-default" title={actorHint(entry)}>
+            {actorName(entry)}
+          </span>
           <time
             dateTime={entry.createdAt}
             title={new Date(entry.createdAt).toLocaleString()}
@@ -1831,6 +1863,7 @@ function WorklogBody({ body }: { body: string }) {
 function WorklogComposer({ entityId, isFirst }: { entityId: string; isFirst: boolean }) {
   const [draft, setDraft] = useState("");
   const add = useAddWorklogEntry();
+  const { data: me } = useMe();
   const canSubmit = draft.trim().length > 0 && !add.isPending;
 
   async function submit() {
@@ -1848,7 +1881,7 @@ function WorklogComposer({ entityId, isFirst }: { entityId: string; isFirst: boo
 
   return (
     <li className="relative flex gap-3">
-      <ActorAvatar kind="human" />
+      <ActorAvatar kind="human" person={me ? { id: me.id, name: me.name } : null} />
       <div className="min-w-0 flex-1">
         <InputArea
           aria-label="New worklog entry"

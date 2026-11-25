@@ -31,6 +31,10 @@ export function initialsOf(name: string): string {
   return chars.join("").toUpperCase();
 }
 
+/**
+ * A person's face: their uploaded picture when they have one, otherwise
+ * their initials on a color of their own.
+ */
 export function MemberAvatar({
   id,
   name,
@@ -42,6 +46,21 @@ export function MemberAvatar({
   size?: number;
   className?: string;
 }) {
+  const { data: members } = useMembers();
+  const picture = members?.find((m) => m.id === id)?.avatar;
+  if (picture) {
+    return (
+      <img
+        src={picture}
+        alt={name}
+        title={name}
+        width={size}
+        height={size}
+        className={cn("inline-block shrink-0 rounded-full object-cover select-none", className)}
+        style={{ width: size, height: size }}
+      />
+    );
+  }
   return (
     <span
       role="img"

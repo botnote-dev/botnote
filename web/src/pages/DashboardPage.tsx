@@ -21,6 +21,7 @@ import { useDrawer } from "../hooks/useDrawer";
 import { usePersistedState } from "../hooks/usePersistedState";
 import { isTaskOverdue } from "../components/tasks/utils";
 import { displayTitle, isUntitled } from "../lib/entityTitle";
+import { actorText } from "../lib/actor";
 import { PROJECT_STATUS_GROUPS, PROJECT_STATUS_LABEL } from "../lib/projectStatus";
 
 const DEFAULT_COLLAPSED_GROUPS: Partial<Record<ProjectStatus, boolean>> = {
@@ -31,7 +32,10 @@ export function DashboardPage() {
   const { data: projects } = useProjects({ includeArchived: true });
   const { data: recent } = useRecent({ limit: 20 });
   // One workspace-wide query feeds every card's open/overdue counts.
-  const { data: openTasks } = useTasksRange({ includeBacklog: true, includeDone: false });
+  const { data: openTasks } = useTasksRange(
+    { includeBacklog: true, includeDone: false },
+    { everyone: true }
+  );
   const drawer = useDrawer();
 
   const counts = new Map<string, { open: number; overdue: number }>();
@@ -79,7 +83,7 @@ export function DashboardPage() {
           </div>
           {projects && projects.length === 0 ? (
             <div className="border border-dashed border-kumo-line rounded-lg p-6 text-center text-sm text-kumo-subtle">
-              No projects yet. Press <kbd>n</kbd> to create one.
+              No projects yet. Create one with the + next to Projects in the sidebar.
             </div>
           ) : (
             projectGroups.map((group) => (
@@ -126,7 +130,7 @@ export function DashboardPage() {
                       </div>
                       <div className="text-xxs text-kumo-subtle mt-0.5">
                         {project ? project.key : "—"} · {timeAgo(e.createdAt)} ·{" "}
-                        <span className="opacity-70">{e.actorKind}</span>
+                        <span className="opacity-70">{actorText(e)}</span>
                       </div>
                     </div>
                   </button>
@@ -237,7 +241,7 @@ function FeedbackSection() {
                   </div>
                   <div className="text-xxs text-kumo-subtle mt-0.5">
                     {tool && <span className="font-mono">{tool} · </span>}
-                    {f.actorKind} · {timeAgo(f.createdAt)}
+                    {actorText(f)} · {timeAgo(f.createdAt)}
                   </div>
                 </div>
                 {resolvable && (

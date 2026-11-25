@@ -3,6 +3,7 @@ import { ArrowCounterClockwiseIcon, TrashIcon, XIcon } from "@phosphor-icons/rea
 import { useProjects, usePurgeEntity, useRestoreEntity, useTrash } from "../api/hooks";
 import { KindBadge } from "../components/KindBadge";
 import { displayTitle, isUntitled } from "../lib/entityTitle";
+import { actorText } from "../lib/actor";
 
 export function TrashPage() {
   const { data: trash } = useTrash(200);
@@ -69,7 +70,7 @@ export function TrashPage() {
                     <div className="text-xxs text-kumo-subtle mt-0.5">
                       {project ? project.key : "—"} · deleted{" "}
                       {e.deletedAt ? timeAgo(e.deletedAt) : "—"} ·{" "}
-                      <span className="opacity-70">{e.actorKind}</span>
+                      <span className="opacity-70">{actorText(e)}</span>
                     </div>
                   </div>
                   <div className="flex items-center gap-1 shrink-0 opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity">

@@ -7,6 +7,7 @@ import { formatDistanceToNow } from "date-fns";
 import { useEntityList, useUpdateEntity } from "../../api/hooks";
 import type { Project } from "../../api/types";
 import { displayTitle, isUntitled } from "../../lib/entityTitle";
+import { actorText } from "../../lib/actor";
 import { TagChip } from "../TagChip";
 import { useModals } from "../../state/modals";
 
@@ -70,7 +71,7 @@ export function NotesList({ project }: { project: Project }) {
             <div className="text-kumo-placeholder mt-1">
               {filter === "pinned"
                 ? "Pin a memory to put it in every agent's opening brief."
-                : "Press c to create one."}
+                : "Use New at the top to add one."}
             </div>
           </div>
         ) : (
@@ -115,7 +116,7 @@ export function NotesList({ project }: { project: Project }) {
                   <div className="text-xxs text-kumo-placeholder mt-1 flex flex-wrap items-center gap-x-2 gap-y-1">
                     <span className="whitespace-nowrap">{formatDistanceToNow(new Date(n.updatedAt), { addSuffix: true })}</span>
                     <span>·</span>
-                    <span>{n.actorKind}</span>
+                    <span>{actorText(n)}</span>
                     {n.tags.length > 0 && (
                       <>
                         <span>·</span>

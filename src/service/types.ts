@@ -364,8 +364,29 @@ export const UpdateEmbeddingSettingsInput = z.object({
 });
 export type UpdateEmbeddingSettingsInput = z.infer<typeof UpdateEmbeddingSettingsInput>;
 
+/**
+ * Languages an instance can ask agents to write content in. A fixed list, not
+ * free text: the name is placed in agent instructions.
+ */
+export const CONTENT_LANGUAGES = {
+  en: "English",
+  "zh-Hans": "Simplified Chinese",
+  "zh-Hant": "Traditional Chinese",
+  ja: "Japanese",
+  ko: "Korean",
+  es: "Spanish",
+  fr: "French",
+  de: "German",
+  pt: "Portuguese"
+} as const;
+export type ContentLanguage = keyof typeof CONTENT_LANGUAGES;
+export const ContentLanguageEnum = z.enum(
+  Object.keys(CONTENT_LANGUAGES) as [ContentLanguage, ...ContentLanguage[]]
+);
+
 export const UpdateWorkspaceSettingsInput = z.object({
-  timezone: z.string().min(1).max(80).optional()
+  timezone: z.string().min(1).max(80).optional(),
+  contentLanguage: ContentLanguageEnum.nullable().optional()
 });
 export type UpdateWorkspaceSettingsInput = z.infer<typeof UpdateWorkspaceSettingsInput>;
 

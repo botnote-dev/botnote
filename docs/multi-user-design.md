@@ -84,8 +84,22 @@ be added to that sweep.
 ## Attribution
 
 `entities.author_user_id` records the person behind each write: the signed-in
-user, or the owner of the token. Responses carry `actor.user` (the person's
-name) next to the existing `actor.label` (the token name for agents).
+user, or the owner of the token. `entity_revisions.author_user_id` records the
+same for each edit. Responses carry `actor`: `label` is the person's name,
+`kind` says whether they or their agent wrote it, and `token` names the API
+token it came through. A person may have many tokens, so the token name is a
+detail, never the author. An instance without accounts has no people, and
+`label` falls back to the token name.
+
+## Content language
+
+One setting for the whole instance (`workspace_settings.content_language`,
+owner or admin): the language agents write task titles, descriptions, worklog
+and notes in. It is a fixed list of languages, and the instruction reaches
+agents through the opening brief and the `context` tool. Unset, the agent
+decides. It is per instance, not per person or project, because shared content
+is read by everyone. It does not translate what already exists and does not
+change the interface language.
 
 ## Assignees
 
@@ -105,9 +119,16 @@ A task has one assignee or none (`entities.assignee_user_id`).
   the opening brief filters that way, and `list_tasks` defaults to it
   (`assignee: "everyone"` shows all). REST list endpoints return everyone's
   unless asked (`assignee: "mine"`).
-- The web UI shows the assignee as an initials avatar on cards and rows, with
-  a picker, and a Mine / Everyone switch on shared project boards. Avatars
-  appear only when the instance has more than one member.
+- The web UI shows the assignee as an avatar on cards and rows, with a picker.
+  One assignee filter (My tasks, Everyone, a member, Unassigned) applies to
+  Today, Tasks, Inbox and shared project boards alike; it defaults to My tasks
+  and is remembered per browser. `POST /v1/tasks/range` takes the same choice
+  as `assignee` and applies it to every bucket. Avatars and the filter appear
+  only when the instance has more than one member.
+- An avatar is the person's uploaded picture (Settings → Account; cropped to
+  a 256px square in the browser, PNG, JPEG or WebP, stored with the account
+  and served at `/v1/users/:id/avatar` to members only) or, without one, their
+  initials on a color of their own.
 
 ## Known limits
 
@@ -120,16 +141,14 @@ A task has one assignee or none (`entities.assignee_user_id`).
 
 ## Later
 
-1. Uploaded profile pictures; a "mine" filter on the cross-project Tasks and
-   Today pages.
-2. Personal vs team memory inside a shared project: a preference such as
+1. Personal vs team memory inside a shared project: a preference such as
    "reply in Chinese" applies to one person and must not steer a teammate's
    agent. Today such notes belong outside the project.
-3. Per-person timezone.
-4. Project member lists, if a team needs a project shared with some people only.
-5. OIDC sign-in; email for invites and password reset.
-6. botnote as its own OAuth 2.1 authorization server for hosted MCP connectors.
-7. Tenancy: multi-workspace mode, sign-up policy, row-level security as a
+2. Per-person timezone.
+3. Project member lists, if a team needs a project shared with some people only.
+4. OIDC sign-in; email for invites and password reset.
+5. botnote as its own OAuth 2.1 authorization server for hosted MCP connectors.
+6. Tenancy: multi-workspace mode, sign-up policy, row-level security as a
    backstop, quotas, billing in a separate package.
 
 ## References

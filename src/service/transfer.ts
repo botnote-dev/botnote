@@ -18,7 +18,7 @@ import {
 } from "../db/schema.js";
 import { VERSION } from "../version.js";
 import { assertOwner, type Scope } from "./scope.js";
-import { EntityKindEnum, Uuid } from "./types.js";
+import { ContentLanguageEnum, EntityKindEnum, Uuid } from "./types.js";
 
 /**
  * JSON Lines workspace dump. Line 1 is the header; every later line is one
@@ -210,11 +210,14 @@ export async function* exportWorkspace(
   }
 
   const [settings] = await db
-    .select({ timezone: workspaceSettings.timezone })
+    .select({
+      timezone: workspaceSettings.timezone,
+      contentLanguage: workspaceSettings.contentLanguage
+    })
     .from(workspaceSettings)
     .where(eq(workspaceSettings.workspaceId, wsId))
     .limit(1);
-  if (settings) yield line("settings", { timezone: settings.timezone });
+  if (settings) yield line("settings", settings);
 }
 
 // ----- import -----
@@ -322,11 +325,13 @@ const RevisionRecord = z.object({
   status: z.string().default("open"),
   actorKind: z.enum(ACTOR_KINDS).default("human"),
   actorTokenId: UuidNull,
+  authorUserId: UuidNull.optional(),
   createdAt: Iso
 });
 
 const SettingsRecord = z.object({
-  timezone: z.string().min(1).max(80)
+  timezone: z.string().min(1).max(80),
+  contentLanguage: ContentLanguageEnum.nullable().optional()
 });
 
 export interface ImportCounts {
@@ -708,6 +713,7 @@ class Importer {
       .values(
         fresh.map((r) => ({
           ...r,
+          authorUserId: this.scope.userId ?? null,
           actorTokenId: r.actorTokenId && knownTokens.has(r.actorTokenId) ? r.actorTokenId : null
         }))
       )
@@ -726,10 +732,18 @@ class Importer {
     if (!last) return;
     await this.db
       .insert(workspaceSettings)
-      .values({ workspaceId: this.scope.workspaceId, timezone: last.timezone })
+      .values({
+        workspaceId: this.scope.workspaceId,
+        timezone: last.timezone,
+        contentLanguage: last.contentLanguage ?? null
+      })
       .onConflictDoUpdate({
         target: workspaceSettings.workspaceId,
-        set: { timezone: last.timezone, updatedAt: new Date() }
+        set: {
+          timezone: last.timezone,
+          ...(last.contentLanguage !== undefined ? { contentLanguage: last.contentLanguage } : {}),
+          updatedAt: new Date()
+        }
       });
     this.counts.settings.imported += rows.length;
   }
